@@ -18,8 +18,21 @@ add_framework(MediaLibrary
     VERSION ${FRAMEWORK_VERSION}
 
     SOURCES
-        src/MediaLibrary.c
+        src/MediaLibrary.m
+        src/MLMediaLibrary.m
+        src/MLMediaLibraryImpl.m
+        src/MLMediaGroup.m
+        src/MLMediaGroupImpl.m
+        src/MLMediaObject.m
+        src/MLMediaObjectImpl.m
+        src/MLMediaSource.m
+        src/MLMediaSourceImpl.m
+        src/MLPMR.m
+        src/MLPMRContextImpl.m
+        src/MLPMRContext.m
 
     DEPENDENCIES
         system
+        objc
+        Foundation
 )
