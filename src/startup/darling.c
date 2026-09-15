@@ -182,6 +182,7 @@ static const char* const g_darlingserverEnvAllowlist[] = {
 	"DARLING_LAUNCHD_STDERR",
 	"DARLING_SHELLSPAWN_DEBUG",
 	"DTAPE_LOG_SAFE_STUBS",
+	"DARLING_DISABLE_PTRAUTH",
 };
 
 static void restrictEnvironmentForDarlingserver(void)
