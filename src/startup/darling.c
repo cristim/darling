@@ -2871,7 +2871,12 @@ void checkPrefixOwner()
 {
 	struct stat st;
 
-	if (stat(prefix, &st) == 0)
+	useOriginalIds();
+	int statResult = stat(prefix, &st);
+	int statErrno = errno;
+	restoreRootIds();
+
+	if (statResult == 0)
 	{
 		if (g_originalUid != 0 && st.st_uid != g_originalUid)
 		{
@@ -2879,7 +2884,7 @@ void checkPrefixOwner()
 			exit(1);
 		}
 	}
-	else if (errno == EACCES)
+	else if (statErrno == EACCES)
 	{
 		fprintf(stderr, "You do not own the prefix directory.\n");
 		exit(1);
