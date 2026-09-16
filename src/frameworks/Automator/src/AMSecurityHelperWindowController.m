@@ -18,17 +18,12 @@
 */
 
 #import <Automator/AMSecurityHelperWindowController.h>
+#import "AMStubSignature.h"
 
 @implementation AMSecurityHelperWindowController
 
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
-{
-    return [NSMethodSignature signatureWithObjCTypes: "v@:"];
-}
+AM_STUB_SHARED_INSTANCE(sharedWindowController)
 
-- (void)forwardInvocation:(NSInvocation *)anInvocation
-{
-    NSLog(@"Stub called: %@ in %@", NSStringFromSelector([anInvocation selector]), [self class]);
-}
+AM_STUB_FORWARDING
 
 @end

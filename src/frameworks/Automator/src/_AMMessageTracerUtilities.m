@@ -18,17 +18,15 @@
 */
 
 #import <Automator/_AMMessageTracerUtilities.h>
+#import "AMStubSignature.h"
 
 @implementation _AMMessageTracerUtilities
 
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
+// Launch timing goes to Apple's MessageTracer, which Darling doesn't have.
++ (void)logTimeIntervalSinceAutomatorLaunch:(const char *)event
 {
-    return [NSMethodSignature signatureWithObjCTypes: "v@:"];
 }
 
-- (void)forwardInvocation:(NSInvocation *)anInvocation
-{
-    NSLog(@"Stub called: %@ in %@", NSStringFromSelector([anInvocation selector]), [self class]);
-}
+AM_STUB_FORWARDING
 
 @end

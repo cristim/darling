@@ -27,9 +27,13 @@
 extern "C" {
 #endif
 
-void* CGDisplayCreateUUIDFromDisplayID(void);
-void* CGDisplayGetDisplayIDFromUUID(void);
+
+CFUUIDRef CGDisplayCreateUUIDFromDisplayID(uint32_t display);
+uint32_t CGDisplayGetDisplayIDFromUUID(CFUUIDRef uuid);
+
 void* CMProfileFromColorSyncProfile(void);
+
+
 void* ColorSyncCMMCopyCMMIdentifier(void);
 void* ColorSyncCMMCopyLocalizedName(void);
 void* ColorSyncCMMCreate(void);
@@ -146,6 +150,45 @@ extern CFStringRef kColorSyncFactoryProfiles;
 extern CFStringRef kColorSyncDeviceUserScope;
 extern CFStringRef kColorSyncDeviceHostScope;
 extern CFStringRef kColorSyncPrinterDeviceClass;
+
+void* ColorSyncProfileCreateWithURLAndOptions(void);
+void* ColorSyncProfileCopyFlexGTCInfo(void);
+void* ColorSyncProfileCreateFlexGTCLookupData(void);
+
+extern CFStringRef kColorSyncGenericGrayGamma22Profile;
+extern CFStringRef kColorSyncGenericLabProfile;
+extern CFStringRef kColorSyncGenericXYZProfile;
+extern CFStringRef kColorSyncGenericCMYKProfile;
+extern CFStringRef kColorSyncSRGBProfile;
+extern CFStringRef kColorSyncAdobeRGB1998Profile;
+extern CFStringRef kColorSyncITUR2020Profile;
+
+extern CFStringRef kColorSyncProfileHeader;
+extern CFStringRef kColorSyncProfileDescription;
+extern CFStringRef kColorSyncProfileURL;
+extern CFStringRef kColorSyncProfileMD5Digest;
+
+extern CFStringRef kColorSyncProfile;
+extern CFStringRef kColorSyncRenderingIntent;
+extern CFStringRef kColorSyncRenderingIntentUseProfileHeader;
+extern CFStringRef kColorSyncRenderingIntentPerceptual;
+extern CFStringRef kColorSyncRenderingIntentRelative;
+extern CFStringRef kColorSyncRenderingIntentSaturation;
+extern CFStringRef kColorSyncRenderingIntentAbsolute;
+extern CFStringRef kColorSyncTransformTag;
+extern CFStringRef kColorSyncTransformDeviceToPCS;
+extern CFStringRef kColorSyncTransformPCSToPCS;
+extern CFStringRef kColorSyncTransformPCSToDevice;
+extern CFStringRef kColorSyncTransformGamutCheck;
+extern CFStringRef kColorSyncTransformSimplifiedConversionData;
+extern CFStringRef kColorSyncConversion3DLut;
+extern CFStringRef kColorSyncConversionGridPoints;
+extern CFStringRef kColorSyncBlackPointCompensation;
+extern CFStringRef kColorSyncExtendedRange;
+extern CFStringRef kColorSyncDoNotSubstituteProfiles;
+extern CFStringRef kColorSyncWaitForCacheReply;
+extern CFStringRef kColorSyncGainMapBaselineHeadroom;
+extern CFStringRef kColorSyncMonoGainMapParams;
 
 #ifdef __cplusplus
 };

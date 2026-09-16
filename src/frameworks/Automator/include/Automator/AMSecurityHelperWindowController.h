@@ -17,8 +17,10 @@
  along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <Foundation/Foundation.h>
+#include <AppKit/AppKit.h>
 
-@interface AMSecurityHelperWindowController : NSObject
+@interface AMSecurityHelperWindowController : NSWindowController
+
++ (instancetype)sharedWindowController;
 
 @end

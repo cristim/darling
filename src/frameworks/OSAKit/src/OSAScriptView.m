@@ -21,14 +21,26 @@
 
 @implementation OSAScriptView
 
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
+@synthesize usesScriptAssistant = _usesScriptAssistant;
+@synthesize usesTabs = _usesTabs;
+@synthesize tabWidth = _tabWidth;
+@synthesize wrapsLines = _wrapsLines;
+@synthesize indentsWrappedLines = _indentsWrappedLines;
+@synthesize indentWidth = _indentWidth;
+
+- (OSAScriptAssistant *)scriptAssistant
 {
-    return [NSMethodSignature signatureWithObjCTypes: "v@:"];
+    return nil;
 }
 
-- (void)forwardInvocation:(NSInvocation *)anInvocation
+- (NSString *)source
 {
-    NSLog(@"Stub called: %@ in %@", NSStringFromSelector([anInvocation selector]), [self class]);
+    return [[[self string] copy] autorelease];
+}
+
+- (void)setSource:(NSString *)source
+{
+    [self setString:source ?: @""];
 }
 
 @end

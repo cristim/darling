@@ -18,17 +18,21 @@
 */
 
 #import <Automator/AMMediaPanel.h>
+#import "AMStubSignature.h"
 
 @implementation AMMediaPanel
 
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
+AM_STUB_SHARED_INSTANCE(sharedMediaPanel)
+
+// The panel is never shown, so there is nothing to notify observers about.
+- (void)addObserver:(id)observer
 {
-    return [NSMethodSignature signatureWithObjCTypes: "v@:"];
 }
 
-- (void)forwardInvocation:(NSInvocation *)anInvocation
+- (void)removeObserver:(id)observer
 {
-    NSLog(@"Stub called: %@ in %@", NSStringFromSelector([anInvocation selector]), [self class]);
 }
+
+AM_STUB_FORWARDING
 
 @end

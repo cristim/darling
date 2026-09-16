@@ -38,6 +38,8 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <termios.h>
 #include <pty.h>
 #include <pwd.h>
+#include <grp.h>
+#include <sys/auxv.h>
 #include "../shellspawn/shellspawn.h"
 #include "darling.h"
 #include "darling-config.h"
@@ -56,16 +58,187 @@ bool g_rootless = false;
 bool g_nonroot = false;
 char g_workingDirectory[4096];
 
+// The launcher is installed setuid root, so its caller controls the environment. Variables
+// that select binaries or files to use (the darlingserver executed as root, the libexec tree
+// used as the overlay lower layer, CA bundles, ...) are ignored when running setuid.
+static const char* getenvTrusted(const char* name)
+{
+	if (getauxval(AT_SECURE))
+		return NULL;
+	return getenv(name);
+}
+
+// Permanently drop to the given uid/gid. Group privileges and the supplementary
+// groups must be given up before the uid, because once the uid is no longer
+// privileged we can no longer change them. Every step is checked and the final
+// identity is verified, so we never continue while root could still be regained.
+static bool dropPrivilegesPermanently(uid_t uid, gid_t gid)
+{
+	gid_t groups[1] = { gid };
+	if (setgroups(1, groups) != 0)
+		return false;
+	if (setresgid(gid, gid, gid) != 0)
+		return false;
+	if (setresuid(uid, uid, uid) != 0)
+		return false;
+
+	uid_t ruid, euid, suid;
+	gid_t rgid, egid, sgid;
+	if (getresuid(&ruid, &euid, &suid) != 0 || ruid != uid || euid != uid || suid != uid)
+		return false;
+	if (getresgid(&rgid, &egid, &sgid) != 0 || rgid != gid || egid != gid || sgid != gid)
+		return false;
+
+	return true;
+}
+
+// In root mode, temporarily switch the effective ids to the invoking user for
+// work done on their behalf. The gid must change while the euid is still 0, and
+// on the way back the euid must be restored first. Non-root mode has already
+// dropped to the invoking user, so there is nothing to switch.
+static void useOriginalIds(void)
+{
+	if (g_nonroot)
+		return;
+	if (setegid(g_originalGid) != 0 || seteuid(g_originalUid) != 0)
+	{
+		fprintf(stderr, "Cannot switch to the invoking user's identity: %s\n", strerror(errno));
+		exit(1);
+	}
+}
+
+static void restoreRootIds(void)
+{
+	if (g_nonroot)
+		return;
+	if (seteuid(0) != 0 || setegid(0) != 0)
+	{
+		fprintf(stderr, "Cannot restore the launcher's identity: %s\n", strerror(errno));
+		exit(1);
+	}
+}
+
+// Test for a path's existence with the invoking user's ids. In root mode a plain
+// access() uses the real uid (0); switching the effective ids to the user and
+// testing with faccessat(AT_EACCESS) checks with the invoking user's rights
+// instead. Non-root mode has already dropped, so this matches a plain access().
+static int existsAsOriginalUser(const char* path)
+{
+	useOriginalIds();
+	int r = faccessat(AT_FDCWD, path, F_OK, AT_EACCESS);
+	restoreRootIds();
+	return r;
+}
+
+// When the prefix does not yet exist and the caller is not really root, make
+// sure the invoking user could create it themselves before we do it for them.
+// In root mode the real ids are already 0 at this point, so the check runs with
+// the effective ids switched to the invoking user (AT_EACCESS), which is the same
+// identity setupPrefix() creates the prefix with.
+static void checkPrefixCreatable(void)
+{
+	if (g_originalUid == 0)
+		return;
+
+	char parentBuf[4096];
+	strncpy(parentBuf, prefix, sizeof(parentBuf) - 1);
+	parentBuf[sizeof(parentBuf) - 1] = '\0';
+
+	size_t len = strlen(parentBuf);
+	while (len > 1 && parentBuf[len - 1] == '/')
+		parentBuf[--len] = '\0';
+
+	char* slash = strrchr(parentBuf, '/');
+	const char* parent;
+	if (slash == parentBuf)
+		parent = "/";
+	else if (slash)
+	{
+		*slash = '\0';
+		parent = parentBuf;
+	}
+	else
+		parent = ".";
+
+	useOriginalIds();
+	int allowed = faccessat(AT_FDCWD, parent, W_OK | X_OK, AT_EACCESS) == 0;
+	restoreRootIds();
+
+	if (!allowed)
+	{
+		fprintf(stderr, "You do not have permission to create the prefix directory.\n");
+		exit(1);
+	}
+}
+
+// darlingserver starts as real root without AT_SECURE, so its dynamic loader and its getenv() calls
+// trust the environment. In root mode a setuid launcher passes it only these variables.
+static const char* const g_darlingserverEnvAllowlist[] = {
+	"HOME",
+	"XDG_CONFIG_HOME",
+	"DARLING_DEBUG",
+	"DSERVER_LOG_STDERR",
+	"DSERVER_LOG_LEVEL",
+	"DARLING_LAUNCHD_STDERR",
+	"DARLING_SHELLSPAWN_DEBUG",
+	"DTAPE_LOG_SAFE_STUBS",
+};
+
+static void restrictEnvironmentForDarlingserver(void)
+{
+	if (!getauxval(AT_SECURE) || g_nonroot)
+		return;
+
+	const size_t count = sizeof(g_darlingserverEnvAllowlist) / sizeof(g_darlingserverEnvAllowlist[0]);
+	char* values[count];
+
+	for (size_t i = 0; i < count; i++)
+	{
+		const char* value = getenv(g_darlingserverEnvAllowlist[i]);
+		values[i] = value ? strdup(value) : NULL;
+		if (value && !values[i])
+		{
+			fprintf(stderr, "Cannot copy the environment for darlingserver\n");
+			exit(1);
+		}
+	}
+
+	if (clearenv() != 0)
+	{
+		fprintf(stderr, "Cannot clear the environment for darlingserver\n");
+		exit(1);
+	}
+
+	for (size_t i = 0; i < count; i++)
+	{
+		if (values[i] && setenv(g_darlingserverEnvAllowlist[i], values[i], 1) != 0)
+		{
+			fprintf(stderr, "Cannot set %s for darlingserver: %s\n", g_darlingserverEnvAllowlist[i], strerror(errno));
+			exit(1);
+		}
+		free(values[i]);
+	}
+}
+
 static const char* getInstallPrefix(void)
 {
 	static char prefixBuf[4096] = {0};
 	if (prefixBuf[0])
 		return prefixBuf;
 
-	const char* env = getenv("DARLING_INSTALL_PREFIX");
+	const char* env = getenvTrusted("DARLING_INSTALL_PREFIX");
 	if (env && env[0])
 	{
 		strncpy(prefixBuf, env, sizeof(prefixBuf) - 1);
+		return prefixBuf;
+	}
+
+	// When setuid, the install location must not depend on where the caller placed the
+	// binary: a hardlink of the launcher next to a planted bin/darlingserver would run
+	// that binary as root. Use only the compiled-in prefix.
+	if (getauxval(AT_SECURE))
+	{
+		strncpy(prefixBuf, INSTALL_PREFIX, sizeof(prefixBuf) - 1);
 		return prefixBuf;
 	}
 
@@ -97,69 +270,48 @@ static const char* getInstallPrefix(void)
 	return prefixBuf;
 }
 
-static void killDarlingDaemons(int sig)
+#include "container-shutdown.h"
+
+// Nonroot shellspawn is launched separately from darlingserver. Pin its
+// recorded host PID and verify its uid and exact prefix socket environment.
+static pid_t shellspawnPeer(int *handle)
 {
-	DIR* dir = opendir("/proc");
-	if (!dir) return;
-
-	uid_t myUid = getuid();
-	struct dirent* entry;
-	while ((entry = readdir(dir)) != NULL)
-	{
-		if (entry->d_name[0] < '0' || entry->d_name[0] > '9')
-			continue;
-
-		pid_t pid = (pid_t)atoi(entry->d_name);
-		if (pid == getpid())
-			continue;
-
-		char statusPath[64];
-		snprintf(statusPath, sizeof(statusPath), "/proc/%d/status", pid);
-		FILE* f = fopen(statusPath, "r");
-		if (!f) continue;
-
-		char sline[256];
-		bool uidMatch = false;
-		while (fgets(sline, sizeof(sline), f))
-		{
-			if (strncmp(sline, "Uid:", 4) == 0)
-			{
-				int r, e, s, fs;
-				if (sscanf(sline, "Uid:\t%d\t%d\t%d\t%d", &r, &e, &s, &fs) >= 2)
-				{
-					if (r == (int)myUid || e == (int)myUid)
-						uidMatch = true;
-				}
-				break;
-			}
-		}
-		fclose(f);
-
-		if (!uidMatch) continue;
-
-		char cmdlinePath[64];
-		snprintf(cmdlinePath, sizeof(cmdlinePath), "/proc/%d/cmdline", pid);
-		int fd = open(cmdlinePath, O_RDONLY);
-		if (fd < 0) continue;
-
-		char cmd[512] = {0};
-		ssize_t n = read(fd, cmd, sizeof(cmd) - 1);
-		close(fd);
-
-		if (n > 0)
-		{
-			if (strstr(cmd, "darlingserver") ||
-			    strstr(cmd, "/sbin/launchd") ||
-			    strstr(cmd, "shellspawn") ||
-			    strstr(cmd, "memberd") ||
-			    strstr(cmd, "opendirectoryd") ||
-			    strstr(cmd, "mldr"))
-			{
-				kill(pid, sig);
-			}
+	char path[4096], environment[65536], expected[4096];
+	pid_t pid = 0;
+	snprintf(path, sizeof(path), "%s/.shellspawn.pid", prefix);
+	useOriginalIds();
+	int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	if (fd >= 0) {
+		FILE *file = fdopen(fd, "r");
+		if (file) { if (fscanf(file, "%d", &pid) != 1) pid = 0; fclose(file); }
+		else close(fd);
+	}
+	if (pid <= 1) { restoreRootIds(); return 0; }
+	int pinned = shutdownHandle(pid);
+	struct stat st;
+	snprintf(path, sizeof(path), "/proc/%d", pid);
+	if (pinned < 0 || stat(path, &st) || st.st_uid != g_originalUid) {
+		if (pinned >= 0) close(pinned);
+		restoreRootIds(); return 0;
+	}
+	snprintf(path, sizeof(path), "/proc/%d/environ", pid);
+	fd = open(path, O_RDONLY | O_CLOEXEC);
+	ssize_t size = fd < 0 ? -1 : read(fd, environment, sizeof(environment));
+	if (fd >= 0) close(fd);
+	int len = snprintf(expected, sizeof(expected), "__mldr_sockpath=%s/.darlingserver.sock", prefix);
+	bool match = false;
+	if (len > 0 && (size_t)len < sizeof(expected) && size > 0) {
+		for (size_t pos = 0; pos < (size_t)size;) {
+			size_t n = strnlen(environment + pos, size - pos);
+			if (n == (size_t)size - pos) break;
+			if (!strcmp(environment + pos, expected)) { match = true; break; }
+			pos += n + 1;
 		}
 	}
-	closedir(dir);
+	restoreRootIds();
+	if (!match) { close(pinned); return 0; }
+	*handle = pinned;
+	return pid;
 }
 
 static void spawnShellspawn(void)
@@ -215,6 +367,15 @@ static void spawnShellspawn(void)
 		      NULL);
 		_exit(1);
 	}
+	char pidPath[4096];
+	snprintf(pidPath, sizeof(pidPath), "%s/.shellspawn.pid", prefix);
+	int fd = open(pidPath, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
+	if (fd < 0 || dprintf(fd, "%d\n", spid) < 0) {
+		fprintf(stderr, "Cannot record this prefix's shellspawn PID.\n");
+		if (fd >= 0) close(fd);
+		exit(1);
+	}
+	close(fd);
 }
 
 static void ensureProcSymlink(const char* prefixPath)
@@ -249,9 +410,9 @@ static void ensureProcSymlink(const char* prefixPath)
 static void ensureHostRootSymlinks(const char* prefixPath)
 {
 	const char* candidates[] = {
-		getenv("PREFIX"),
-		getenv("TERMUX__PREFIX"),
-		getenv("TERMUX_PREFIX"),
+		getenvTrusted("PREFIX"),
+		getenvTrusted("TERMUX__PREFIX"),
+		getenvTrusted("TERMUX_PREFIX"),
 		getInstallPrefix()
 	};
 
@@ -401,7 +562,7 @@ static void ensureHomebrewSymlinks(const char* prefixPath)
 	{
 		if (S_ISLNK(st.st_mode))
 		{
-			char target[512];
+			char target[4096];
 			ssize_t len = readlink(optHomebrew, target, sizeof(target) - 1);
 			if (len > 0)
 			{
@@ -463,7 +624,7 @@ static void ensureHomebrewSymlinks(const char* prefixPath)
 		}
 		else if (S_ISLNK(st.st_mode))
 		{
-			char target[512];
+			char target[4096];
 			ssize_t len = readlink(usrLocalOpt, target, sizeof(target) - 1);
 			if (len > 0)
 			{
@@ -483,9 +644,140 @@ static void ensureHomebrewSymlinks(const char* prefixPath)
 
 	char usrLocalCellar[4096];
 	snprintf(usrLocalCellar, sizeof(usrLocalCellar), "%s/usr/local/Cellar", prefixPath);
-	if (lstat(usrLocalCellar, &st) != 0)
+	if (lstat(usrLocalCellar, &st) == 0)
+	{
+		if (S_ISDIR(st.st_mode))
+		{
+			DIR* d = opendir(usrLocalCellar);
+			if (d)
+			{
+				struct dirent* de;
+				bool has_real_content = false;
+				while ((de = readdir(d)) != NULL)
+				{
+					if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+						continue;
+					has_real_content = true;
+					break;
+				}
+				closedir(d);
+				if (!has_real_content)
+				{
+					rmdir(usrLocalCellar);
+					symlink("../../opt/nanobrew/prefix/Cellar", usrLocalCellar);
+				}
+			}
+		}
+		else if (S_ISLNK(st.st_mode))
+		{
+			char target[4096];
+			ssize_t len = readlink(usrLocalCellar, target, sizeof(target) - 1);
+			if (len > 0)
+			{
+				target[len] = '\0';
+				if (strcmp(target, "../../opt/nanobrew/prefix/Cellar") != 0 && strcmp(target, "/opt/nanobrew/prefix/Cellar") != 0)
+				{
+					unlink(usrLocalCellar);
+					symlink("../../opt/nanobrew/prefix/Cellar", usrLocalCellar);
+				}
+			}
+		}
+	}
+	else
 	{
 		symlink("../../opt/nanobrew/prefix/Cellar", usrLocalCellar);
+	}
+
+	char usrLocalEtc[4096];
+	snprintf(usrLocalEtc, sizeof(usrLocalEtc), "%s/usr/local/etc", prefixPath);
+	if (lstat(usrLocalEtc, &st) == 0)
+	{
+		if (S_ISDIR(st.st_mode))
+		{
+			DIR* d = opendir(usrLocalEtc);
+			if (d)
+			{
+				struct dirent* de;
+				bool has_real_content = false;
+				while ((de = readdir(d)) != NULL)
+				{
+					if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+						continue;
+					has_real_content = true;
+					break;
+				}
+				closedir(d);
+				if (!has_real_content)
+				{
+					rmdir(usrLocalEtc);
+					symlink("../../opt/nanobrew/prefix/etc", usrLocalEtc);
+				}
+			}
+		}
+		else if (S_ISLNK(st.st_mode))
+		{
+			char target[4096];
+			ssize_t len = readlink(usrLocalEtc, target, sizeof(target) - 1);
+			if (len > 0)
+			{
+				target[len] = '\0';
+				if (strcmp(target, "../../opt/nanobrew/prefix/etc") != 0 && strcmp(target, "/opt/nanobrew/prefix/etc") != 0)
+				{
+					unlink(usrLocalEtc);
+					symlink("../../opt/nanobrew/prefix/etc", usrLocalEtc);
+				}
+			}
+		}
+	}
+	else
+	{
+		symlink("../../opt/nanobrew/prefix/etc", usrLocalEtc);
+	}
+
+	char usrLocalShare[4096];
+	snprintf(usrLocalShare, sizeof(usrLocalShare), "%s/usr/local/share", prefixPath);
+	if (lstat(usrLocalShare, &st) == 0)
+	{
+		if (S_ISDIR(st.st_mode))
+		{
+			DIR* d = opendir(usrLocalShare);
+			if (d)
+			{
+				struct dirent* de;
+				bool has_real_content = false;
+				while ((de = readdir(d)) != NULL)
+				{
+					if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+						continue;
+					has_real_content = true;
+					break;
+				}
+				closedir(d);
+				if (!has_real_content)
+				{
+					rmdir(usrLocalShare);
+					symlink("../../opt/nanobrew/prefix/share", usrLocalShare);
+				}
+			}
+		}
+		else if (S_ISLNK(st.st_mode))
+		{
+			char target[4096];
+			ssize_t len = readlink(usrLocalShare, target, sizeof(target) - 1);
+			if (len > 0)
+			{
+				target[len] = '\0';
+				if (strcmp(target, "../../opt/nanobrew/prefix/share") != 0 && strcmp(target, "/opt/nanobrew/prefix/share") != 0)
+				{
+					unlink(usrLocalShare);
+					symlink("../../opt/nanobrew/prefix/share", usrLocalShare);
+				}
+			}
+		}
+	}
+	else
+	{
+		symlink("../../opt/nanobrew/prefix/share", usrLocalShare);
 	}
 
 	// 3. Symlink all binaries from /opt/nanobrew/prefix/bin into /usr/local/bin
@@ -589,6 +881,34 @@ static void ensureHomebrewSymlinks(const char* prefixPath)
 			fclose(f);
 		}
 	}
+
+	// 6. Bridge libpcap into nanobrew opt/libpcap/lib
+	char nbPcapDir[4096], nbPcapLib[4096];
+	snprintf(nbPcapDir, sizeof(nbPcapDir), "%s/libpcap", nanobrewOpt);
+	snprintf(nbPcapLib, sizeof(nbPcapLib), "%s/libpcap/lib", nanobrewOpt);
+	createDir(nbPcapDir);
+	createDir(nbPcapLib);
+	char nbPcapDylibA[4096];
+	snprintf(nbPcapDylibA, sizeof(nbPcapDylibA), "%s/libpcap.A.dylib", nbPcapLib);
+	if (lstat(nbPcapDylibA, &st) != 0)
+	{
+		symlink("/usr/lib/libpcap.A.dylib", nbPcapDylibA);
+	}
+	char nbPcapDylib[4096];
+	snprintf(nbPcapDylib, sizeof(nbPcapDylib), "%s/libpcap.dylib", nbPcapLib);
+	if (lstat(nbPcapDylib, &st) != 0)
+	{
+		symlink("libpcap.A.dylib", nbPcapDylib);
+	}
+
+	// 7. Ensure /usr/lib/libmd.dylib links to nanobrew's libmd if present
+	char usrLibMd[4096], candidateNbLibMd[4096];
+	snprintf(usrLibMd, sizeof(usrLibMd), "%s/usr/lib/libmd.dylib", prefixPath);
+	snprintf(candidateNbLibMd, sizeof(candidateNbLibMd), "%s/opt/nanobrew/prefix/lib/libmd.dylib", prefixPath);
+	if (lstat(usrLibMd, &st) != 0 && access(candidateNbLibMd, F_OK) == 0)
+	{
+		symlink("/opt/nanobrew/prefix/lib/libmd.dylib", usrLibMd);
+	}
 }
 
 static const char* findHostCaBundle(void)
@@ -598,7 +918,7 @@ static const char* findHostCaBundle(void)
 		return cached_bundle;
 
 	// 1. SSL_CERT_FILE environment variable
-	const char* ssl_cert_file = getenv("SSL_CERT_FILE");
+	const char* ssl_cert_file = getenvTrusted("SSL_CERT_FILE");
 	if (ssl_cert_file && access(ssl_cert_file, R_OK) == 0)
 	{
 		cached_bundle = ssl_cert_file;
@@ -606,9 +926,9 @@ static const char* findHostCaBundle(void)
 	}
 
 	// 2. Termux environment ($PREFIX / $TERMUX_PREFIX)
-	const char* termux_prefix = getenv("PREFIX");
+	const char* termux_prefix = getenvTrusted("PREFIX");
 	if (!termux_prefix || !termux_prefix[0])
-		termux_prefix = getenv("TERMUX_PREFIX");
+		termux_prefix = getenvTrusted("TERMUX_PREFIX");
 
 	if (termux_prefix && termux_prefix[0])
 	{
@@ -1045,10 +1365,26 @@ int main(int argc, char ** argv)
 	// (shared) procfs, exposed to the container via a symlink.
 	g_nonroot = (getenv("DARLING_NONROOT") != NULL || geteuid() != 0);
 	if (g_nonroot)
+	{
 		g_rootless = true;
-
-	if (!g_nonroot)
-	{		setuid(0);
+		// Non-root mode must never keep the privileges the setuid bit grants.
+		// If we were started with elevated privileges (running under AT_SECURE,
+		// or with an effective uid/gid that differs from the real one),
+		// permanently drop back to the real user before touching the filesystem
+		// or spawning anything. A genuinely unprivileged, non-setuid run has
+		// nothing to drop and its behaviour is unchanged.
+		if (getauxval(AT_SECURE) || geteuid() != getuid() || getegid() != getgid())
+		{
+			if (!dropPrivilegesPermanently(g_originalUid, g_originalGid))
+			{
+				fprintf(stderr, "Failed to drop privileges for non-root mode.\n");
+				return 1;
+			}
+		}
+	}
+	else
+	{
+		setuid(0);
 		setgid(0);
 		g_rootless = (geteuid() != 0);
 	}
@@ -1068,17 +1404,22 @@ int main(int argc, char ** argv)
 
 	if (!checkPrefixDir())
 	{
+		checkPrefixCreatable();
 		setupPrefix();
 		g_fixPermissions = true;
 	}
 	checkPrefixOwner();
 
+	// These only act on the invoking user's prefix, through paths the user
+	// controls, so run them with the user's ids (as setupPrefix() does).
+	useOriginalIds();
 	if (g_nonroot)
 		ensureProcSymlink(prefix);
 	ensureHostRootSymlinks(prefix);
 	ensureShSymlink(prefix);
 	ensureHomebrewSymlinks(prefix);
 	ensureKeychains(prefix);
+	restoreRootIds();
 
 	int c;
 	while (1)
@@ -1126,31 +1467,50 @@ int main(int argc, char ** argv)
 		pid_t pidInit = getInitProcess();
 		if (pidInit > 0)
 		{
-			kill(pidInit, SIGTERM);
-			kill(-pidInit, SIGTERM);
+			int handle = shutdownHandle(pidInit);
+			if (handle < 0 || !shutdownServerMatches(pidInit, prefix))
+			{
+				if (handle >= 0) close(handle);
+				fprintf(stderr, "Cannot verify this prefix's server for shutdown.\n");
+				return 1;
+			}
+			int shellHandle = -1;
+			pid_t shellspawn = g_nonroot ? shellspawnPeer(&shellHandle) : 0;
+			if (g_nonroot && shellHandle < 0)
+			{
+				close(handle);
+				fprintf(stderr, "Cannot obtain nonroot shellspawn process handle; shutdown refused.\n");
+				return 1;
+			}
+			bool stopped = shutdownContainer(pidInit, handle, shellspawn, shellHandle);
+			if (shellHandle >= 0) close(shellHandle);
+			close(handle);
+			if (!stopped)
+			{
+				fprintf(stderr, "Container shutdown incomplete; refusing broader cleanup.\n");
+				return 1;
+			}
 		}
-
-		killDarlingDaemons(SIGTERM);
-		usleep(50000);
-
-		if (pidInit > 0)
-		{
-			kill(pidInit, SIGKILL);
-			kill(-pidInit, SIGKILL);
-		}
-		killDarlingDaemons(SIGKILL);
 
 		char socketPath[4096];
 		snprintf(socketPath, sizeof(socketPath), "%s" SHELLSPAWN_SOCKPATH, prefix);
-		unlink(socketPath);
 
 		char pidPath[4096];
 		snprintf(pidPath, sizeof(pidPath), "%s/.init.pid", prefix);
-		unlink(pidPath);
 
 		char dserverSock[4096];
 		snprintf(dserverSock, sizeof(dserverSock), "%s/.darlingserver.sock", prefix);
+
+		// These paths are inside the user's prefix (the socket path also goes
+		// through var/run), so remove them with the user's ids.
+		useOriginalIds();
+		unlink(socketPath);
+		unlink(pidPath);
 		unlink(dserverSock);
+		char shellPidPath[4096];
+		snprintf(shellPidPath, sizeof(shellPidPath), "%s/.shellspawn.pid", prefix);
+		unlink(shellPidPath);
+		restoreRootIds();
 
 		fprintf(stderr, "Darling container shut down successfully.\n");
 		return 0;
@@ -1162,12 +1522,15 @@ int main(int argc, char ** argv)
 		char socketPath[4096];
 		
 		snprintf(socketPath, sizeof(socketPath), "%s"  SHELLSPAWN_SOCKPATH, prefix);
-		
-		unlink(socketPath);
 
 		char dserverSock[4096];
 		snprintf(dserverSock, sizeof(dserverSock), "%s/.darlingserver.sock", prefix);
+
+		// Stale sockets inside the user's prefix: remove them with the user's ids.
+		useOriginalIds();
+		unlink(socketPath);
 		unlink(dserverSock);
+		restoreRootIds();
 		
 		setupWorkdir();
 		pidInit = spawnInitProcess();
@@ -1176,15 +1539,17 @@ int main(int argc, char ** argv)
 		if (g_nonroot)
 			spawnShellspawn();
 
-		// Wait until shellspawn starts
+		// Wait until shellspawn starts. The socket lives inside the user's prefix
+		// and is created by shellspawn with mode 0600 owned by the user, so probe
+		// it with the user's ids rather than as root.
 		for (int i = 0; i < SHELLSPAWN_WAIT_RETRIES; i++)
 		{
-			if (access(socketPath, F_OK) == 0)
+			if (existsAsOriginalUser(socketPath) == 0)
 				break;
 			usleep(50000);
 		}
 
-		if (access(socketPath, F_OK) != 0)
+		if (existsAsOriginalUser(socketPath) != 0)
 		{
 			fprintf(stderr, "Timed out waiting for shellspawn in container\n");
 			return 1;
@@ -1194,16 +1559,16 @@ int main(int argc, char ** argv)
 	{
 		char socketPath[4096];
 		snprintf(socketPath, sizeof(socketPath), "%s" SHELLSPAWN_SOCKPATH, prefix);
-		if (access(socketPath, F_OK) != 0)
+		if (existsAsOriginalUser(socketPath) != 0)
 		{
 			spawnShellspawn();
 			for (int i = 0; i < SHELLSPAWN_WAIT_RETRIES; i++)
 			{
-				if (access(socketPath, F_OK) == 0)
+				if (existsAsOriginalUser(socketPath) == 0)
 					break;
 				usleep(50000);
 			}
-			if (access(socketPath, F_OK) != 0)
+			if (existsAsOriginalUser(socketPath) != 0)
 			{
 				fprintf(stderr, "Timed out waiting for shellspawn in container\n");
 				return 1;
@@ -1219,7 +1584,7 @@ int main(int argc, char ** argv)
 		joinNamespace(pidInit, CLONE_NEWNS, "mnt");
 #endif
 
-	if (!g_nonroot) seteuid(g_originalUid);
+	useOriginalIds();
 
 	if (strcmp(argv[1], "shell") == 0)
 	{
@@ -1953,6 +2318,8 @@ pid_t spawnInitProcess(void)
 
 		close(pipefd[0]);
 
+		restrictEnvironmentForDarlingserver();
+
 		if (g_nonroot)
 		{
 			// Tell darlingserver that no namespaces were created and no
@@ -2072,13 +2439,9 @@ void putInitPid(pid_t pidInit)
 	strcpy(pidPath, prefix);
 	strcat(pidPath, pidFile);
 
-	if (!g_nonroot) seteuid(g_originalUid);
-	if (!g_nonroot) setegid(g_originalGid);
-
+	useOriginalIds();
 	fp = fopen(pidPath, "w");
-
-	if (!g_nonroot) seteuid(0);
-	if (!g_nonroot) setegid(0);
+	restoreRootIds();
 
 	if (fp == NULL)
 	{
@@ -2155,14 +2518,24 @@ void setupWorkdir()
 
 	strcat(workdir, suffix);
 
+	// Create the workdir with the user's ids, like the user-owned prefix next to it.
+	useOriginalIds();
 	createDir(workdir);
+	restoreRootIds();
 }
 
 int checkPrefixDir()
 {
 	struct stat st;
 
-	if (stat(prefix, &st) == 0)
+	// The prefix belongs to the user; stat it with their ids, as the other
+	// prefix operations do.
+	useOriginalIds();
+	int r = stat(prefix, &st);
+	int e = errno;
+	restoreRootIds();
+
+	if (r == 0)
 	{
 		if (!S_ISDIR(st.st_mode))
 		{
@@ -2171,9 +2544,9 @@ int checkPrefixDir()
 		}
 		return 1; // OK
 	}
-	if (errno == ENOENT)
+	if (e == ENOENT)
 		return 0; // not found
-	fprintf(stderr, "Cannot access %s: %s\n", prefix, strerror(errno));
+	fprintf(stderr, "Cannot access %s: %s\n", prefix, strerror(e));
 	exit(1);
 }
 
@@ -2203,8 +2576,7 @@ void setupPrefix()
 
 	fprintf(stderr, "Setting up a new Darling prefix at %s\n", prefix);
 
-	if (!g_nonroot) seteuid(g_originalUid);
-	if (!g_nonroot) setegid(g_originalGid);
+	useOriginalIds();
 
 	createDir(prefix);
 	strcpy(path, prefix);
@@ -2286,9 +2658,8 @@ void setupPrefix()
 		passwd_entry->pw_name
 	);
 	fclose(file);
-	
-	if (!g_nonroot) seteuid(0);
-	if (!g_nonroot) setegid(0);
+
+	restoreRootIds();
 }
 
 pid_t getInitProcess()
@@ -2301,20 +2672,28 @@ pid_t getInitProcess()
 	char procBuf[100];
 	char *exeBuf, *statusBuf;
 	int uidMatch = 0, gidMatch = 0;
+	pid_t result = 0;
 
 	pidPath = (char*) alloca(strlen(prefix) + sizeof(pidFile));
 	strcpy(pidPath, prefix);
 	strcat(pidPath, pidFile);
 
+	// The pidfile lives inside the user's prefix, so open and unlink it with the
+	// invoking user's ids, as the other prefix operations do. The /proc lookups
+	// below read only world-readable procfs and run with the same ids, which is
+	// enough to confirm the pid is a darlingserver owned by the user. Every exit
+	// path restores root ids via the label.
+	useOriginalIds();
+
 	fp = fopen(pidPath, "r");
 	if (fp == NULL)
-		return 0;
+		goto out;
 
 	if (fscanf(fp, "%d", &pid_i) != 1)
 	{
 		fclose(fp);
 		unlink(pidPath);
-		return 0;
+		goto out;
 	}
 	fclose(fp);
 	pid = (pid_t) pid_i;
@@ -2323,7 +2702,7 @@ pid_t getInitProcess()
 	if (kill(pid, 0) == -1)
 	{
 		unlink(pidPath);
-		return 0;
+		goto out;
 	}
 
 	// Is it actually an init process?
@@ -2332,21 +2711,22 @@ pid_t getInitProcess()
 	if (fp == NULL)
 	{
 		unlink(pidPath);
-		return 0;
+		goto out;
 	}
 
 	if (fscanf(fp, "%ms", &exeBuf) != 1)
 	{
 		fclose(fp);
 		unlink(pidPath);
-		return 0;
+		goto out;
 	}
 	fclose(fp);
 
 	if (strcmp(exeBuf, "darlingserver") != 0)
 	{
+		free(exeBuf);
 		unlink(pidPath);
-		return 0;
+		goto out;
 	}
 	free(exeBuf);
 
@@ -2358,7 +2738,7 @@ pid_t getInitProcess()
 		if (fp == NULL)
 		{
 			unlink(pidPath);
-			return 0;
+			goto out;
 		}
 
 		while (1)
@@ -2366,7 +2746,10 @@ pid_t getInitProcess()
 			statusBuf = NULL;
 			size_t len;
 			if (getline(&statusBuf, &len, fp) == -1)
+			{
+				free(statusBuf);
 				break;
+			}
 			int rid, eid, sid, fid;
 			if (sscanf(statusBuf, "Uid: %d %d %d %d", &rid, &eid, &sid, &fid) == 4)
 			{
@@ -2383,18 +2766,26 @@ pid_t getInitProcess()
 		if (!uidMatch || !gidMatch)
 		{
 			unlink(pidPath);
-			return 0;
+			goto out;
 		}
 	}
 
-	return pid;
+	result = pid;
+out:
+	restoreRootIds();
+	return result;
 }
 
 void checkPrefixOwner()
 {
 	struct stat st;
 
-	if (stat(prefix, &st) == 0)
+	useOriginalIds();
+	int statResult = stat(prefix, &st);
+	int statErrno = errno;
+	restoreRootIds();
+
+	if (statResult == 0)
 	{
 		if (g_originalUid != 0 && st.st_uid != g_originalUid)
 		{
@@ -2402,7 +2793,7 @@ void checkPrefixOwner()
 			exit(1);
 		}
 	}
-	else if (errno == EACCES)
+	else if (statErrno == EACCES)
 	{
 		fprintf(stderr, "You do not own the prefix directory.\n");
 		exit(1);

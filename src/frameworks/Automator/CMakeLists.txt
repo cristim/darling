@@ -19,6 +19,7 @@ add_framework(Automator
 
     SOURCES
         src/Automator.m
+        src/AMVariablesViewController.m
         src/_AMActionAuxiliary.m
         src/AMAction.m
         src/AMFFeedEnclosure.m
@@ -304,6 +305,7 @@ add_framework(Automator
         src/AMInputOutputWorkflowMetadata.m
         src/AMVariablesEditorController.m
         src/AMSplitView.m
+        src/AMAppKitLayoutAdditions.m
         src/AMApplicationDefinition.m
         src/_AMFinderApplication.m
         src/_AMFinderItem.m
@@ -630,4 +632,5 @@ add_framework(Automator
         system
         objc
         Foundation
+        AppKit
 )

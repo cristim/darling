@@ -17,8 +17,17 @@
  along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <Foundation/Foundation.h>
+#include <AppKit/AppKit.h>
 
-@interface AMWorkflowView : NSObject
+@class AMWorkflowController;
+
+@interface AMWorkflowView : NSView
+{
+    AMWorkflowController *_workflowController;
+    BOOL _editable;
+}
+
+@property (assign) AMWorkflowController *workflowController;
+@property (getter=isEditable) BOOL editable;
 
 @end

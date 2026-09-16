@@ -206,9 +206,13 @@ add_subdirectory(\"${CMAKE_CURRENT_SOURCE_DIR}/libelfloader/wrapgen\" wrapgen)
 		"${HOST_TOOLS_BUILD_DIR}/buildtools/getuuid"
 		"${CMAKE_BINARY_DIR}/src/buildtools/getuuid")
 
-	execute_process(COMMAND ${CMAKE_COMMAND} -E copy
+	# wrap_elf() outputs depend on this file: copy only when it changed, so a
+	# reconfigure doesn't regenerate every wrapper, and reconfigure on wrapgen edits.
+	execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different
 		"${HOST_TOOLS_BUILD_DIR}/wrapgen/wrapgen"
 		"${CMAKE_BINARY_DIR}/src/libelfloader/wrapgen/wrapgen")
+	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+		"${CMAKE_CURRENT_SOURCE_DIR}/libelfloader/wrapgen/wrapgen.cpp")
 
 	add_custom_target(${APPLE_TARGET_TRIPLET_PRIMARY}-ld)
 	add_custom_target(${APPLE_TARGET_TRIPLET_PRIMARY}-ar)
@@ -425,6 +429,7 @@ if (COMPONENT_cli)
 	add_subdirectory(libsysmon)
 	add_subdirectory(PlistBuddy)
 	add_subdirectory(libquit)
+	add_subdirectory(libScreenReader)
 	add_subdirectory(external/lzfse)
 	add_subdirectory(clt)
 	add_subdirectory(diskutil)
@@ -467,6 +472,9 @@ if (COMPONENT_cli OR COMPONENT_dev_gui_common)
 	add_subdirectory(external/Heimdal)
 	add_subdirectory(libDiagnosticMessagesClient)
 	add_subdirectory(libsandbox)
+	add_subdirectory(libpcap)
+	add_subdirectory(libmd)
+	add_subdirectory(libIOReport)
 	add_subdirectory(opendirectory_internal)
 	add_subdirectory(external/fmdb)
 	add_subdirectory(external/libnetwork)

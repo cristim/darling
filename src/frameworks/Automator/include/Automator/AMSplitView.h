@@ -17,8 +17,24 @@
  along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <Foundation/Foundation.h>
+#include <AppKit/AppKit.h>
 
-@interface AMSplitView : NSObject
+// A split view whose first pane (or last, with collapsesToRightOrBottom) collapses and expands back to
+// expandedPosition, the size that pane had while expanded.
+@interface AMSplitView : NSSplitView
+{
+    BOOL _collapsesToRightOrBottom;
+    CGFloat _expandedPosition;
+}
+
+@property BOOL collapsesToRightOrBottom;
+@property CGFloat expandedPosition;
+
+- (void)collapse;
+- (void)expand;
+- (void)collapseWithAnimation:(BOOL)animate;
+- (void)expandWithAnimation:(BOOL)animate;
+- (void)applyExpandedPosition;
+- (void)updateExpandedPositionWithProposedPosition:(CGFloat)position ofSubViewAt:(NSInteger)index;
 
 @end
