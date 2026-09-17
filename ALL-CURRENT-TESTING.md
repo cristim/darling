@@ -38,5 +38,5 @@ partial-prefix rejection, and cleanup all passed in
 This validates the candidate only; the installed launcher remains unchanged
 (`f78b07ff...`) and no installed-runtime update is claimed. The original
 automatic-review rejection and the later explicit authorization are preserved
-in the shared handoff; temporary-candidate removal is still awaiting verified
-Polkit cleanup.
+in the shared handoff; the temporary privileged-candidate directory has since
+been fully removed and host-verified.
