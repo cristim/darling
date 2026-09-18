@@ -43,6 +43,8 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include "../shellspawn/shellspawn.h"
 #include "darling.h"
 #include "darling-config.h"
+#include "prefix-state.h"
+#include "profile-prefix.h"
 
 // Between Linux 4.9 and 4.11, a strange bug has been introduced
 // which prevents connecting to Unix sockets if the socket was
@@ -537,6 +539,36 @@ static void relativizeNanobrewSymlinks(const char* dirPath)
 	closedir(dir);
 }
 
+static void ensureSystemLibBridge(const char* prefixPath, const char* libName)
+{
+	char usrLib[4096];
+	snprintf(usrLib, sizeof(usrLib), "%s/usr/lib/%s", prefixPath, libName);
+
+	struct stat st;
+	if (lstat(usrLib, &st) == 0)
+		return;
+
+	const char* const searchDirs[] = {
+		"/usr/local/lib",
+		"/opt/homebrew/lib",
+		"/opt/nanobrew/prefix/lib",
+		NULL
+	};
+
+	for (int i = 0; searchDirs[i]; i++)
+	{
+		char hostCandidate[4096];
+		snprintf(hostCandidate, sizeof(hostCandidate), "%s%s/%s", prefixPath, searchDirs[i], libName);
+		if (lstat(hostCandidate, &st) == 0)
+		{
+			char target[512];
+			snprintf(target, sizeof(target), "%s/%s", searchDirs[i], libName);
+			if (symlink(target, usrLib) == 0 || errno == EEXIST)
+				break;
+		}
+	}
+}
+
 static void ensureHomebrewSymlinks(const char* prefixPath)
 {
 	char nanobrewBin[4096];
@@ -780,6 +812,52 @@ static void ensureHomebrewSymlinks(const char* prefixPath)
 		symlink("../../opt/nanobrew/prefix/share", usrLocalShare);
 	}
 
+	char usrLocalLib[4096];
+	snprintf(usrLocalLib, sizeof(usrLocalLib), "%s/usr/local/lib", prefixPath);
+	if (lstat(usrLocalLib, &st) == 0)
+	{
+		if (S_ISDIR(st.st_mode))
+		{
+			DIR* d = opendir(usrLocalLib);
+			if (d)
+			{
+				struct dirent* de;
+				bool has_real_content = false;
+				while ((de = readdir(d)) != NULL)
+				{
+					if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+						continue;
+					has_real_content = true;
+					break;
+				}
+				closedir(d);
+				if (!has_real_content)
+				{
+					rmdir(usrLocalLib);
+					symlink("../../opt/nanobrew/prefix/lib", usrLocalLib);
+				}
+			}
+		}
+		else if (S_ISLNK(st.st_mode))
+		{
+			char target[4096];
+			ssize_t len = readlink(usrLocalLib, target, sizeof(target) - 1);
+			if (len > 0)
+			{
+				target[len] = '\0';
+				if (strcmp(target, "../../opt/nanobrew/prefix/lib") != 0 && strcmp(target, "/opt/nanobrew/prefix/lib") != 0)
+				{
+					unlink(usrLocalLib);
+					symlink("../../opt/nanobrew/prefix/lib", usrLocalLib);
+				}
+			}
+		}
+	}
+	else
+	{
+		symlink("../../opt/nanobrew/prefix/lib", usrLocalLib);
+	}
+
 	// 3. Symlink all binaries from /opt/nanobrew/prefix/bin into /usr/local/bin
 	DIR* dir = opendir(nanobrewBin);
 	if (dir)
@@ -901,13 +979,23 @@ static void ensureHomebrewSymlinks(const char* prefixPath)
 		symlink("libpcap.A.dylib", nbPcapDylib);
 	}
 
-	// 7. Ensure /usr/lib/libmd.dylib links to nanobrew's libmd if present
-	char usrLibMd[4096], candidateNbLibMd[4096];
-	snprintf(usrLibMd, sizeof(usrLibMd), "%s/usr/lib/libmd.dylib", prefixPath);
-	snprintf(candidateNbLibMd, sizeof(candidateNbLibMd), "%s/opt/nanobrew/prefix/lib/libmd.dylib", prefixPath);
-	if (lstat(usrLibMd, &st) != 0 && access(candidateNbLibMd, F_OK) == 0)
+	// 7. Ensure system library bridges into /usr/lib if provided by package managers (/usr/local/lib, /opt/homebrew/lib, /opt/nanobrew/prefix/lib)
+	ensureSystemLibBridge(prefixPath, "libmd.dylib");
+
+	const char* const pcre2Libs[] = {
+		"libpcre2-8.0.dylib",
+		"libpcre2-8.dylib",
+		"libpcre2-16.0.dylib",
+		"libpcre2-16.dylib",
+		"libpcre2-32.0.dylib",
+		"libpcre2-32.dylib",
+		"libpcre2-posix.3.dylib",
+		"libpcre2-posix.dylib",
+		NULL
+	};
+	for (int i = 0; pcre2Libs[i]; i++)
 	{
-		symlink("/opt/nanobrew/prefix/lib/libmd.dylib", usrLibMd);
+		ensureSystemLibBridge(prefixPath, pcre2Libs[i]);
 	}
 }
 
@@ -1389,17 +1477,15 @@ int main(int argc, char ** argv)
 		g_rootless = (geteuid() != 0);
 	}
 
-	prefix = getenv("DPREFIX");
-	if (!prefix)
-		prefix = defaultPrefixPath();
-	if (!prefix)
-		return 1;
-	if (strlen(prefix) > 255)
-	{
-		fprintf(stderr, "Prefix path too long\n");
+	enum darling_prefix_error prefixError;
+	prefix = darlingSelectPrefix(getenv("DPREFIX"), getenv("DARLING_PROFILE"),
+		getenv("HOME"), &prefixError);
+	if (!prefix) {
+		fprintf(stderr, "%s.\n", darlingPrefixError(prefixError));
 		return 1;
 	}
 	unsetenv("DPREFIX");
+	unsetenv("DARLING_PROFILE");
 	getcwd(g_workingDirectory, sizeof(g_workingDirectory));
 
 	if (!checkPrefixDir())
@@ -2075,6 +2161,32 @@ void setupShellspawnEnv(int sockfd)
 		"/usr/sbin:"
 		"/sbin");
 	pushShellspawnCommand(sockfd, SHELLSPAWN_SETENV, "TMPDIR=/private/tmp");
+
+	// Ensure native Linux Mesa/Vulkan drivers have a valid, shared host/guest path for shader caches.
+	// In rootless Darling, host .so libraries (e.g. Mesa/RADV) execute direct Linux host syscalls,
+	// bypassing vchroot. If HOME=/Users/<user> is inherited, Mesa attempts mkdir /Users on the host
+	// root, which fails with Permission Denied and disables shader caching entirely.
+	// We use /tmp/.darling-shader-cache-<uid> because /tmp is identical in both host and guest namespaces.
+	// Note: While /tmp is typically on tmpfs and does not survive host reboots (requiring Mesa to
+	// rebuild the cache once per boot session), it guarantees collision-free, ram-speed shader access
+	// without needing host-path translation between /home and /Volumes/SystemRoot.
+	char shaderCacheDir[4096];
+	snprintf(shaderCacheDir, sizeof(shaderCacheDir), "/tmp/.darling-shader-cache-%u", geteuid());
+	mkdir(shaderCacheDir, 0700);
+
+	char envShaderCache[4096];
+	snprintf(envShaderCache, sizeof(envShaderCache), "MESA_SHADER_CACHE_DIR=%s", shaderCacheDir);
+	pushShellspawnCommand(sockfd, SHELLSPAWN_SETENV, envShaderCache);
+
+	// Redirect XDG_CACHE_HOME to /tmp so host Linux libraries (such as Fontconfig or GUI backends)
+	// running within Darling can store cache data on the host without failing against non-existent /Users paths.
+	char xdgCacheDir[4096];
+	snprintf(xdgCacheDir, sizeof(xdgCacheDir), "/tmp/.darling-cache-%u", geteuid());
+	mkdir(xdgCacheDir, 0700);
+
+	char envCache[4096];
+	snprintf(envCache, sizeof(envCache), "XDG_CACHE_HOME=%s", xdgCacheDir);
+	pushShellspawnCommand(sockfd, SHELLSPAWN_SETENV, envCache);
 	pushShellspawnCommand(sockfd, SHELLSPAWN_SETENV,
 		"PERL5LIB=/System/Library/Perl/5.28:"
 		"/System/Library/Perl/5.28/darwin-thread-multi-2level:"
@@ -2239,7 +2351,8 @@ void showHelp(const char* argv0)
 	fprintf(stderr, "\t%s shutdown\n", argv0);
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Environment variables:\n"
-		"DPREFIX - specifies the location of Darling prefix, defaults to ~/.darling\n");
+		"DPREFIX - specifies the location of the Darling prefix, defaults to ~/.darling\n"
+		"DARLING_PROFILE - selects an isolated named prefix at ~/.darling.<name>\n");
 }
 
 void showVersion(const char* argv0) {
@@ -2542,7 +2655,25 @@ int checkPrefixDir()
 			fprintf(stderr, "%s is a file. Remove the file.\n", prefix);
 			exit(1);
 		}
-		return 1; // OK
+		enum darling_prefix_state state;
+		useOriginalIds();
+		state = darlingClassifyPrefix(prefix);
+		int classifyError = errno;
+		restoreRootIds();
+		if (state == DARLING_PREFIX_STATE_INSPECTION_ERROR)
+		{
+			fprintf(stderr, "Cannot inspect prefix %s: %s.\n", prefix, strerror(classifyError));
+			exit(1);
+		}
+		if (state == DARLING_PREFIX_STATE_UNINITIALIZED)
+		{
+			fprintf(stderr,
+				"Prefix %s is non-empty but is not an initialized Darling prefix; refusing to overwrite it.\n"
+				"Use an absent/empty directory for a new prefix, or point DPREFIX at an initialized prefix.\n",
+				prefix);
+			exit(1);
+		}
+		return state == DARLING_PREFIX_STATE_INITIALIZED;
 	}
 	if (e == ENOENT)
 		return 0; // not found

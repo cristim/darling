@@ -1,5 +1,35 @@
 # Launcher shutdown isolation
 
+## Prefix initialization state
+
+Run without root or any Darling container:
+
+```sh
+cc -Wall -Wextra -Werror -O2 tests/launcher/prefix-state.c -o /tmp/darling-prefix-state-test
+/tmp/darling-prefix-state-test
+```
+
+An empty pre-created directory is treated like an absent prefix and follows
+normal setup. A non-empty directory must contain the structural files created
+by `setupPrefix()`; otherwise the launcher fails closed instead of overwriting
+user data.
+
+## Profile selection
+
+Run without root or any Darling container:
+
+```sh
+cc -Wall -Wextra -Werror -O2 tests/launcher/profile-prefix.c -o /tmp/darling-profile-prefix-test
+/tmp/darling-profile-prefix-test
+```
+
+This tests the launcher's pure prefix selector. `DPREFIX` remains the explicit
+path interface. `DARLING_PROFILE=<name>` selects the isolated sibling prefix
+`~/.darling.<name>`; using both selectors or a name containing path separators
+is rejected. The harness does not create or access any prefix.
+
+## Shutdown isolation
+
 Run without root or any Darling container:
 
 ```sh
