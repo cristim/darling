@@ -8,7 +8,7 @@
 #import <Foundation/NSDictionary.h>
 #import <Foundation/NSArray.h>
 #import <Foundation/NSValue.h>
-#include <CoreGraphics/CGWindow.h>
+#include <CoreGraphics/CGWindowPrivate.h>
 #include <CoreGraphics/CGDirectDisplay.h>
 
 static const NSString* kDirectDisplayArray = @"CGDirectDisplay";
