@@ -142,3 +142,6 @@ if (COMPONENT_gui_stubs)
 	add_subdirectory(UIFoundation)
 	add_subdirectory(UserActivity)
 endif()
+
+# LOCAL PROBE
+add_subdirectory(probe)
