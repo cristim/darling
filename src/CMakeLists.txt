@@ -630,3 +630,15 @@ if (COMPONENT_jsc)
 endif()
 
 #add_subdirectory(external/WebCore)
+
+# LOCAL PROBE
+set(PROBE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/private-frameworks/probe)
+foreach(pair CoreServices:PROBE_CORESERVICES CoreSymbolication:PROBE_CORESYMBOLICATION IOReport:PROBE_IOREPORT CoreGraphics:PROBE_COREGRAPHICS)
+	string(REPLACE ":" ";" parts ${pair})
+	list(GET parts 0 t)
+	list(GET parts 1 d)
+	configure_file(${PROBE_DIR}/existing_cf.c ${CMAKE_CURRENT_BINARY_DIR}/probe_${t}.c COPYONLY)
+	set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/probe_${t}.c TARGET_DIRECTORY ${t} PROPERTIES COMPILE_DEFINITIONS ${d} INCLUDE_DIRECTORIES ${PROBE_DIR})
+	target_sources(${t} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/probe_${t}.c)
+endforeach()
+target_sources(AppKit PRIVATE ${PROBE_DIR}/existing_appkit.m)
