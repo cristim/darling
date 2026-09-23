@@ -15,3 +15,30 @@ PROBE_FN(IOReportChannelGetChannelID)
 #ifdef PROBE_COREGRAPHICS
 PROBE_FN(CGSEventIsAppUnresponsive)
 #endif
+#ifdef PROBE_SYSTEMCONFIGURATION
+PROBE_FN(SCDynamicStoreCopyKeyList)
+PROBE_FN(SCDynamicStoreCreateRunLoopSource)
+PROBE_FN(SCDynamicStoreKeyCreateNetworkServiceEntity)
+PROBE_FN(SCError)
+PROBE_FN(SCErrorString)
+PROBE_FN(SCNetworkInterfaceCopyAll)
+PROBE_FN(SCNetworkInterfaceGetBSDName)
+PROBE_FN(SCNetworkInterfaceGetInterface)
+PROBE_FN(SCNetworkInterfaceGetInterfaceType)
+PROBE_FN(SCNetworkInterfaceGetLocalizedDisplayName)
+PROBE_FN(SCNetworkReachabilitySetDispatchQueue)
+PROBE_FN(SCNetworkServiceGetInterface)
+PROBE_FN(SCNetworkServiceGetServiceID)
+PROBE_FN(SCNetworkSetCopyCurrent)
+PROBE_FN(SCNetworkSetCopyServices)
+PROBE_FN(SCPreferencesCreateWithAuthorization)
+#endif
+#ifdef PROBE_CONTACTS
+PROBE_CFSTR(CNContactIdentifierKey)
+#endif
+#ifdef PROBE_COREGRAPHICS
+PROBE_FN(CGContextBeginTransparencyLayerWithRect)
+#endif
+#ifdef PROBE_FOUNDATION
+PROBE_FN(NSLocalizedFileSizeDescription)
+#endif

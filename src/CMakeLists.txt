@@ -633,7 +633,7 @@ endif()
 
 # LOCAL PROBE
 set(PROBE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/private-frameworks/probe)
-foreach(pair CoreServices:PROBE_CORESERVICES CoreSymbolication:PROBE_CORESYMBOLICATION IOReport:PROBE_IOREPORT CoreGraphics:PROBE_COREGRAPHICS)
+foreach(pair SystemConfiguration:PROBE_SYSTEMCONFIGURATION Contacts:PROBE_CONTACTS Foundation_obj:PROBE_FOUNDATION CoreServices:PROBE_CORESERVICES CoreSymbolication:PROBE_CORESYMBOLICATION IOReport:PROBE_IOREPORT CoreGraphics:PROBE_COREGRAPHICS)
 	string(REPLACE ":" ";" parts ${pair})
 	list(GET parts 0 t)
 	list(GET parts 1 d)

@@ -15,3 +15,4 @@ PROBE_CLASS(NSSearchToolbarItem, NSToolbarItem)
 @implementation NSPopover (ProbeCoding)
 - (id)initWithCoder:(NSCoder *)c { fprintf(stderr, "PROBE NSPopover initWithCoder (probe category)\n"); return [self init]; }
 @end
+const CFStringRef NSTextColorBinding = CFSTR("textColor");
