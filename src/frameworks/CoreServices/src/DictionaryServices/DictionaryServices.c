@@ -34,6 +34,12 @@ CFRange DCSGetTermRangeInStringWithOptions(void *dictionary, CFStringRef string,
     return CFRangeMake(kCFNotFound, 0);
 }
 
+void* DCSCopyAvailableDictionaries(void)
+{
+    if (verbose) puts("STUB: DCSCopyAvailableDictionaries called");
+    return NULL;
+}
+
 void* DCSCopyRecordForReference(void)
 {
     if (verbose) puts("STUB: DCSCopyRecordForReference called");
@@ -70,6 +76,12 @@ void* DCSDictionaryAssetCopyDiagnosticLog(void)
     return NULL;
 }
 
+void* DCSDictionaryCreate(void)
+{
+    if (verbose) puts("STUB: DCSDictionaryCreate called");
+    return NULL;
+}
+
 void* DCSDictionaryDownloadFinished(void)
 {
     if (verbose) puts("STUB: DCSDictionaryDownloadFinished called");
@@ -85,6 +97,24 @@ void* DCSDictionaryGetAssetObj(void)
 void* DCSDictionaryGetBaseURL(void)
 {
     if (verbose) puts("STUB: DCSDictionaryGetBaseURL called");
+    return NULL;
+}
+
+void* DCSDictionaryGetIdentifier(void)
+{
+    if (verbose) puts("STUB: DCSDictionaryGetIdentifier called");
+    return NULL;
+}
+
+void* DCSDictionaryGetLanguages(void)
+{
+    if (verbose) puts("STUB: DCSDictionaryGetLanguages called");
+    return NULL;
+}
+
+void* DCSDictionaryGetName(void)
+{
+    if (verbose) puts("STUB: DCSDictionaryGetName called");
     return NULL;
 }
 
@@ -130,6 +160,12 @@ void* DCSDictionaryGetSubDictionaries(void)
     return NULL;
 }
 
+void* DCSDictionaryGetURL(void)
+{
+    if (verbose) puts("STUB: DCSDictionaryGetURL called");
+    return NULL;
+}
+
 void* DCSDictionaryIsLanguageDictionary(void)
 {
     if (verbose) puts("STUB: DCSDictionaryIsLanguageDictionary called");
@@ -151,6 +187,12 @@ void* DCSDictionarySetDataHeader(void)
 void* DCSDictionarySetPreference(void)
 {
     if (verbose) puts("STUB: DCSDictionarySetPreference called");
+    return NULL;
+}
+
+void* DCSGetActiveDictionaries(void)
+{
+    if (verbose) puts("STUB: DCSGetActiveDictionaries called");
     return NULL;
 }
 
@@ -259,6 +301,12 @@ void* DCSSearchSessionScheduleWithRunLoop(void)
 void* DCSSearchSessionUnscheduleFromRunLoop(void)
 {
     if (verbose) puts("STUB: DCSSearchSessionUnscheduleFromRunLoop called");
+    return NULL;
+}
+
+void* DCSSetActiveDictionaries(void)
+{
+    if (verbose) puts("STUB: DCSSetActiveDictionaries called");
     return NULL;
 }
 
