@@ -1,5 +1,7 @@
 // Guest test: AssetCacheServicesExtensions exports the metrics database location Apple documents,
-// and its classes exist and instantiate. Exits non-zero on failure.
+// its classes instantiate, and the manager call sequence Activity Monitor was observed to send
+// (initWithDelegate:delegateQueue: on the main queue, then isActivated) reports no active cache.
+// Exits non-zero on failure.
 #import <AssetCacheServicesExtensions/AssetCacheServicesExtensions.h>
 #include <objc/runtime.h>
 #include <stdio.h>
@@ -20,6 +22,18 @@ int main(void)
 			failures++;
 		}
 	}
+	NSObject *delegate = [[NSObject alloc] init];
+	AssetCacheServicesManager *manager = [[AssetCacheServicesManager alloc] initWithDelegate:delegate
+		delegateQueue:dispatch_get_main_queue()];
+	if (!manager) {
+		fprintf(stderr, "FAIL: initWithDelegate:delegateQueue: returned nil\n");
+		failures++;
+	} else if ([manager isActivated]) {
+		fprintf(stderr, "FAIL: isActivated is YES without a content caching service\n");
+		failures++;
+	}
+	[manager release];
+	[delegate release];
 	printf("%s\n", failures ? "FAIL" : "PASS");
 	return failures != 0;
 }
