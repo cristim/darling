@@ -21,6 +21,13 @@
 
 @implementation SCNView
 
+- (instancetype)initWithCoder:(NSCoder *)coder
+{
+    // NSView restores the frame, subviews, autoresizing mask, and constraints
+    // recorded by Interface Builder. SceneKit rendering state is not decoded yet.
+    return [super initWithCoder:coder];
+}
+
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];
