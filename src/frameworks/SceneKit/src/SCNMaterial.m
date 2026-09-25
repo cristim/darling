@@ -18,8 +18,35 @@
 */
 
 #import <SceneKit/SCNMaterial.h>
+#import <SceneKit/SCNMaterialProperty.h>
 
 @implementation SCNMaterial
+
+@synthesize lightingModelName = _lightingModelName;
+@synthesize shaderModifiers = _shaderModifiers;
+@synthesize doubleSided = _doubleSided;
+@synthesize writesToDepthBuffer = _writesToDepthBuffer;
+@synthesize readsFromDepthBuffer = _readsFromDepthBuffer;
+
+- (instancetype)init
+{
+    if ((self = [super init]))
+        _diffuse = [[SCNMaterialProperty alloc] init];
+    return self;
+}
+
+- (void)dealloc
+{
+    [_lightingModelName release];
+    [_diffuse release];
+    [_shaderModifiers release];
+    [super dealloc];
+}
+
+- (SCNMaterialProperty *)diffuse
+{
+    return _diffuse;
+}
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {

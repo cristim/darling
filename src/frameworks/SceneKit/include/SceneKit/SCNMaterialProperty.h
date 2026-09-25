@@ -20,5 +20,10 @@
 #include <Foundation/Foundation.h>
 
 @interface SCNMaterialProperty : NSObject
+{
+    id _contents;
+}
+
+@property (nonatomic, retain) id contents;
 
 @end

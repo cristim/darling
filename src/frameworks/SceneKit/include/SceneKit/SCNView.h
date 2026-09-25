@@ -26,9 +26,16 @@
 {
     SCNScene *_scene;
     NSColor *_backgroundColor;
+    id _delegate;
+    BOOL _rendersContinuously;
 }
 
 @property (nonatomic, retain) SCNScene *scene;
 @property (nonatomic, retain) NSColor *backgroundColor;
+@property (nonatomic, assign) id delegate;
+@property (nonatomic) BOOL rendersContinuously;
+
+- (void)prepareObjects:(NSArray *)objects withCompletionHandler:(void (^)(BOOL success))completionHandler;
+- (void)play:(id)sender;
 
 @end

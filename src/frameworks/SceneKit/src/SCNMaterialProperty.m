@@ -21,6 +21,14 @@
 
 @implementation SCNMaterialProperty
 
+@synthesize contents = _contents;
+
+- (void)dealloc
+{
+    [_contents release];
+    [super dealloc];
+}
+
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];

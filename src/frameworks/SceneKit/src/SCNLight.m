@@ -21,6 +21,8 @@
 
 @implementation SCNLight
 
+@synthesize intensity = _intensity;
+
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];

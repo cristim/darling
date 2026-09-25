@@ -24,6 +24,7 @@
 @synthesize name = _name;
 @synthesize light = _light;
 @synthesize geometry = _geometry;
+@synthesize camera = _camera;
 
 static void SCNEnumerateDescendants(SCNNode *node, void (^block)(SCNNode *, BOOL *), BOOL *stop)
 {
@@ -52,6 +53,7 @@ static void SCNEnumerateDescendants(SCNNode *node, void (^block)(SCNNode *, BOOL
     [_childNodes release];
     [_light release];
     [_geometry release];
+    [_camera release];
     [super dealloc];
 }
 

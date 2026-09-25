@@ -23,6 +23,19 @@
 
 @synthesize scene = _scene;
 @synthesize backgroundColor = _backgroundColor;
+@synthesize delegate = _delegate;
+@synthesize rendersContinuously = _rendersContinuously;
+
+- (void)prepareObjects:(NSArray *)objects withCompletionHandler:(void (^)(BOOL))completionHandler
+{
+    // SceneKit has no rendering backend yet, so report that preparation failed.
+    if (completionHandler)
+        completionHandler(NO);
+}
+
+- (void)play:(id)sender
+{
+}
 
 - (instancetype)initWithCoder:(NSCoder *)coder
 {

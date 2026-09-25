@@ -19,6 +19,23 @@
 
 #include <Foundation/Foundation.h>
 
+@class SCNMaterialProperty;
+
 @interface SCNMaterial : NSObject
+{
+    NSString *_lightingModelName;
+    SCNMaterialProperty *_diffuse;
+    NSDictionary *_shaderModifiers;
+    BOOL _doubleSided;
+    BOOL _writesToDepthBuffer;
+    BOOL _readsFromDepthBuffer;
+}
+
+@property (nonatomic, copy) NSString *lightingModelName;
+@property (nonatomic, readonly, retain) SCNMaterialProperty *diffuse;
+@property (nonatomic, copy) NSDictionary *shaderModifiers;
+@property (nonatomic, getter=isDoubleSided) BOOL doubleSided;
+@property (nonatomic) BOOL writesToDepthBuffer;
+@property (nonatomic) BOOL readsFromDepthBuffer;
 
 @end

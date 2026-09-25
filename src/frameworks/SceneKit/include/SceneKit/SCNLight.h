@@ -20,5 +20,10 @@
 #include <Foundation/Foundation.h>
 
 @interface SCNLight : NSObject
+{
+    double _intensity;
+}
+
+@property (nonatomic) double intensity;
 
 @end

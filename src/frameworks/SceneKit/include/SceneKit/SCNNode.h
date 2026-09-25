@@ -21,7 +21,7 @@
 
 typedef struct { double x, y, z; } SCNVector3;
 typedef struct { double x, y, z, w; } SCNVector4;
-@class SCNLight, SCNGeometry;
+@class SCNLight, SCNGeometry, SCNCamera;
 
 @interface SCNNode : NSObject
 {
@@ -31,12 +31,14 @@ typedef struct { double x, y, z, w; } SCNVector4;
     SCNVector4 _worldOrientation;
     SCNLight *_light;
     SCNGeometry *_geometry;
+    SCNCamera *_camera;
 }
 
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, readonly, retain) NSArray *childNodes;
 @property (nonatomic, retain) SCNLight *light;
 @property (nonatomic, retain) SCNGeometry *geometry;
+@property (nonatomic, retain) SCNCamera *camera;
 
 - (void)addChildNode:(SCNNode *)child;
 - (SCNNode *)childNodeWithName:(NSString *)name recursively:(BOOL)recursively;
