@@ -21,4 +21,18 @@
 
 @interface AVAudioPlayer : NSObject
 
+- (instancetype)initWithData:(NSData *)data error:(NSError **)outError;
+- (instancetype)initWithContentsOfURL:(NSURL *)url error:(NSError **)outError;
+
+@property (nonatomic, readonly, copy) NSData *data;
+@property (nonatomic, readonly, copy) NSURL *url;
+@property (nonatomic, assign) float volume;
+@property (nonatomic, assign) id delegate;
+@property (nonatomic, assign) NSInteger numberOfLoops;
+
+- (BOOL)prepareToPlay;
+- (BOOL)play;
+- (void)pause;
+- (void)stop;
+
 @end
