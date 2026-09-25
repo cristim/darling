@@ -19,6 +19,12 @@
 
 #include <AppKit/NSView.h>
 
-@interface IKScannerDeviceView : NSView
+@protocol IKScannerDeviceViewDelegate;
+
+@interface IKScannerDeviceView : NSView {
+    id<IKScannerDeviceViewDelegate> _delegate;
+}
+
+@property (assign) id<IKScannerDeviceViewDelegate> delegate;
 
 @end

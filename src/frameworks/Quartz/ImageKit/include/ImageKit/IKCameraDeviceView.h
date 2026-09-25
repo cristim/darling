@@ -19,6 +19,12 @@
 
 #include <AppKit/NSView.h>
 
-@interface IKCameraDeviceView : NSView
+@protocol IKCameraDeviceViewDelegate;
+
+@interface IKCameraDeviceView : NSView {
+    id<IKCameraDeviceViewDelegate> _delegate;
+}
+
+@property (assign) id<IKCameraDeviceViewDelegate> delegate;
 
 @end

@@ -20,4 +20,5 @@
 #import <ImageKit/IKScannerDeviceView.h>
 
 @implementation IKScannerDeviceView
+@synthesize delegate = _delegate;
 @end

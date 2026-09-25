@@ -20,4 +20,5 @@
 #import <ImageKit/IKCameraDeviceView.h>
 
 @implementation IKCameraDeviceView
+@synthesize delegate = _delegate;
 @end
