@@ -3,6 +3,26 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 
+extern const CFStringRef kMIDIPropertyModel;
+extern const CFStringRef kMIDIPropertyDeviceID;
+extern const CFStringRef kMIDIPropertySupportsMMC;
+extern const CFStringRef kMIDIPropertySupportsGeneralMIDI;
+extern const CFStringRef kMIDIPropertyDriverDeviceEditorApp;
+extern const CFStringRef kMIDIPropertyImage;
+extern const CFStringRef kMIDIPropertyTransmitsMTC;
+extern const CFStringRef kMIDIPropertyReceivesMTC;
+extern const CFStringRef kMIDIPropertyTransmitsClock;
+extern const CFStringRef kMIDIPropertyReceivesClock;
+extern const CFStringRef kMIDIPropertyOffline;
+extern const CFStringRef kMIDIPropertyPrivate;
+extern const CFStringRef kMIDIPropertyDriverOwner;
+extern const CFStringRef kMIDIPropertyIsEmbeddedEntity;
+extern const CFStringRef kMIDIPropertyReceiveChannels;
+extern const CFStringRef kMIDIPropertyTransmitChannels;
+extern const CFStringRef kMIDIPropertyMaxReceiveChannels;
+extern const CFStringRef kMIDIPropertyMaxTransmitChannels;
+extern const CFStringRef kMIDIPropertyUMPCanTransmitGroupless;
+
 /* Identification */
 extern const CFStringRef kMIDIPropertyName                        API_AVAILABLE(macos(10.0));
 // extern const CFStringRef kMIDIPropertyModel                       API_AVAILABLE(macos(10.0));
