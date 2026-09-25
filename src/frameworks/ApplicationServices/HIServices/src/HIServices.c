@@ -24,6 +24,11 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <LaunchServices/LaunchServicesPriv.h>
 #include <CoreGraphics/CoreGraphicsPrivate.h>
+#include <spawn.h>
+#include <string.h>
+#include <errno.h>
+
+extern char** environ;
 
 const CFStringRef kAXUIElementCopyHierarchyArrayAttributesKey = CFSTR("AXCHAA");
 const CFStringRef kAXUIElementCopyHierarchyMaxArrayCountKey = CFSTR("AXCHMAC");
@@ -754,10 +759,26 @@ void* CoreDockSendDragWindowMessage(void)
     return NULL;
 }
 
-void* CoreDockSendNotification(void)
+void CoreDockSendNotification(CFStringRef notification, void* context)
 {
+    static const char* launchers[] = {
+        "/Applications/Darling Applications.app/Contents/MacOS/Darling Applications",
+        "/usr/libexec/darling/Applications/Darling Applications.app/Contents/MacOS/Darling Applications"
+    };
+    (void)context;
+    if (notification != NULL && CFStringCompare(notification, CFSTR("com.apple.launchpad.toggle"), 0) == kCFCompareEqualTo) {
+        pid_t child;
+        int error = 0;
+        for (size_t i = 0; i < sizeof(launchers) / sizeof(launchers[0]); ++i) {
+            char *const argv[] = {(char*)launchers[i], "--launchpad", NULL};
+            error = posix_spawn(&child, launchers[i], NULL, NULL, argv, environ);
+            if (error == 0 || error != ENOENT) break;
+        }
+        if (error != 0 && verbose)
+            fprintf(stderr, "CoreDockSendNotification: could not open app grid: %s\n", strerror(error));
+        return;
+    }
     if (verbose) puts("STUB: CoreDockSendNotification called");
-    return NULL;
 }
 
 void* CoreDockSetAutoHideEnabled(void)

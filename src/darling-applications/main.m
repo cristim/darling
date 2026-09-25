@@ -1,9 +1,57 @@
 #import <AppKit/AppKit.h>
 #include <copyfile.h>
-#include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <math.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/file.h>
+#include <unistd.h>
+
+static BOOL gLaunchpadMode = NO;
+static int gLaunchpadLock = -1;
+static volatile sig_atomic_t gLaunchpadToggleRequested = 0;
+
+static void LaunchpadToggleSignal(int signalNumber) {
+	(void)signalNumber;
+	gLaunchpadToggleRequested = 1;
+}
+
+static BOOL ClaimLaunchpadInstance(void) {
+	const char *prefix = getenv("DPREFIX");
+	unsigned long long prefixHash = 1469598103934665603ULL;
+	for (const unsigned char *p = (const unsigned char *)(prefix ?: ""); *p; ++p)
+		prefixHash = (prefixHash ^ *p) * 1099511628211ULL;
+	char lockPath[96];
+	snprintf(lockPath, sizeof(lockPath), "/tmp/darling-apps-grid-%lu-%llx.lock", (unsigned long)getuid(), prefixHash);
+	gLaunchpadLock = open(lockPath, O_CREAT | O_RDWR | O_NOFOLLOW, 0600);
+	if (gLaunchpadLock < 0) return YES;
+	if (flock(gLaunchpadLock, LOCK_EX | LOCK_NB) != 0) {
+		if (errno != EWOULDBLOCK) {
+			close(gLaunchpadLock);
+			gLaunchpadLock = -1;
+			return YES;
+		}
+		char text[32] = {0};
+		ssize_t count = read(gLaunchpadLock, text, sizeof(text) - 1);
+		if (count > 0) {
+			pid_t owner = (pid_t)strtol(text, NULL, 10);
+			if (owner > 0) kill(owner, SIGUSR1);
+		}
+		close(gLaunchpadLock);
+		gLaunchpadLock = -1;
+		return NO;
+	}
+	signal(SIGUSR1, LaunchpadToggleSignal);
+	ftruncate(gLaunchpadLock, 0);
+	char text[32];
+	int length = snprintf(text, sizeof(text), "%ld\n", (long)getpid());
+	write(gLaunchpadLock, text, length);
+	return YES;
+}
 
 static NSString *FindHelper(NSString *name) {
 	NSArray *searchPaths = @[
@@ -189,12 +237,23 @@ static int ImportCopyStatus(int what, int stage, copyfile_state_t state, const c
 
 @implementation DarlingApplications
 
+- (void)toggleLaunchpadIfRequested:(NSTimer *)timer {
+	if (!gLaunchpadToggleRequested || self.window == nil) return;
+	gLaunchpadToggleRequested = 0;
+	if ([self.window isVisible]) [self.window orderOut:nil];
+	else {
+		[self.grid setNeedsDisplay:YES];
+		[self.window makeKeyAndOrderFront:nil];
+		[self.window display];
+	}
+}
+
 - (void)layoutViewerContent {
 	NSView *content = self.window.contentView;
 	CGFloat width = content.bounds.size.width;
 	CGFloat height = content.bounds.size.height;
 	CGFloat margin = 20.0;
-	CGFloat bottomControls = 135.0;
+	CGFloat bottomControls = gLaunchpadMode ? 20.0 : 135.0;
 	NSRect listFrame = NSMakeRect(margin, bottomControls, MAX(1.0, width - margin * 2.0), MAX(1.0, height - bottomControls - 20.0));
 	/* Actions stay together above a dedicated status strip.  Keeping the
 	 * operation label and progress control below the buttons makes import
@@ -232,7 +291,7 @@ static int ImportCopyStatus(int what, int stage, copyfile_state_t state, const c
 	CGFloat height = MIN(480.0, MAX(1.0, visible.size.height - 40.0));
 	NSRect frame = NSMakeRect(visible.origin.x + (visible.size.width - width) / 2.0, visible.origin.y + (visible.size.height - height) / 2.0, width, height);
 	self.window = [[[NSWindow alloc] initWithContentRect:frame styleMask:(NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskResizable) backing:NSBackingStoreBuffered defer:NO] autorelease];
-	self.window.title = @"Darling Applications";
+	self.window.title = gLaunchpadMode ? @"Apps" : @"Darling Applications";
 	[self.window setMinSize:NSMakeSize(MIN(520.0, width), MIN(320.0, height))];
 	NSScrollView *scroll = [[[NSScrollView alloc] initWithFrame:NSMakeRect(20, 135, 680, 305)] autorelease];
 	self.scrollView = scroll;
@@ -251,11 +310,21 @@ static int ImportCopyStatus(int what, int stage, copyfile_state_t state, const c
 	self.progress = [[[NSProgressIndicator alloc] initWithFrame:NSMakeRect(20, 18, 570, 16)] autorelease]; self.progress.minValue = 0; self.progress.maxValue = 1; self.progress.doubleValue = 0; self.progress.indeterminate = NO; self.progress.toolTip = @"Import progress"; [self.window.contentView addSubview:self.progress];
 	self.cancelButton = [[[NSButton alloc] initWithFrame:NSMakeRect(600, 14, 100, 28)] autorelease]; self.cancelButton.title = @"Cancel"; self.cancelButton.toolTip = @"Cancel the current import and remove only its temporary copy."; self.cancelButton.target = self; self.cancelButton.action = @selector(cancelImport:); self.cancelButton.enabled = NO; [self.window.contentView addSubview:self.cancelButton];
 	self.importButton = [[[NSButton alloc] initWithFrame:NSMakeRect(410, 75, 180, 32)] autorelease]; self.importButton.title = @"Import macOS Apps"; self.importButton.toolTip = @"Copy verified applications into this prefix with progress."; self.importButton.target = self; self.importButton.action = @selector(importApplications:); [self.window.contentView addSubview:self.importButton];
+	if (gLaunchpadMode) {
+		self.brewButton.hidden = YES;
+		self.bundleButton.hidden = YES;
+		self.importButton.hidden = YES;
+		self.progressLabel.hidden = YES;
+		self.progress.hidden = YES;
+		self.cancelButton.hidden = YES;
+	}
 	[self.window setFrame:frame display:NO];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(windowDidResize:) name:NSWindowDidResizeNotification object:self.window];
 	[self layoutViewerContent];
 	[self refreshApplications];
 	[self.window center]; [self.window makeKeyAndOrderFront:nil];
+	if (gLaunchpadMode)
+		[NSTimer scheduledTimerWithTimeInterval:0.15 target:self selector:@selector(toggleLaunchpadIfRequested:) userInfo:nil repeats:YES];
 }
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView { return self.applications.count; }
@@ -562,6 +631,8 @@ static int ImportCopyStatus(int what, int stage, copyfile_state_t state, const c
 @end
 
 int main(int argc, const char **argv) {
+	gLaunchpadMode = argc > 1 && strcmp(argv[1], "--launchpad") == 0;
+	if (gLaunchpadMode && !ClaimLaunchpadInstance()) return 0;
 	/* Native Wayland is the default on Omarchy; X11 remains explicit. */
 	if (getenv("WAYLAND_DISPLAY") && !getenv("DARLING_APPKIT_BACKEND")) {
 		setenv("DARLING_APPKIT_BACKEND", "wayland", 1);
