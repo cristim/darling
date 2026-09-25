@@ -21,6 +21,23 @@
 
 @implementation SCNScene
 
++ (instancetype)sceneNamed:(NSString *)name
+{
+    if (![name isKindOfClass:[NSString class]] || [name length] == 0)
+        return nil;
+
+    NSString *path = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:name];
+    BOOL isDirectory = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDirectory] || isDirectory)
+        return nil;
+
+    // SceneKit archives contain an entire scene graph. Until SCNScene and its
+    // node types implement keyed decoding, returning an empty scene would make
+    // callers believe the file loaded successfully.
+    NSLog(@"SCNScene: cannot decode scene archive %@", path);
+    return nil;
+}
+
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];

@@ -21,4 +21,6 @@
 
 @interface SCNScene : NSObject
 
++ (instancetype)sceneNamed:(NSString *)name;
+
 @end
