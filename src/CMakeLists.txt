@@ -549,6 +549,10 @@ endif()
 # it has its own component checks to determine which libraries to generate wrappers for.
 add_subdirectory(native)
 
+if (COMPONENT_gui)
+	add_subdirectory(screenshot)
+endif()
+
 # has its own component checks
 add_subdirectory(external/vim)
 

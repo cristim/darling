@@ -1,0 +1,46 @@
+#!/bin/sh
+# Launch Screenshot.app with a one-shot broker for the host Wayland display.
+set -u
+
+launcher=$(readlink -f "$0")
+install_root=$(dirname "$(dirname "$launcher")")
+prefix=${DPREFIX:-"$HOME/.darling"}
+mkdir -p "$prefix" || exit 1
+prefix=$(cd "$prefix" && pwd -P) || exit 1
+export DPREFIX="$prefix"
+export DARLING_DISABLE_PTRAUTH=${DARLING_DISABLE_PTRAUTH:-1}
+
+"$install_root/libexec/darling/darling-screenshot-broker" &
+broker_pid=$!
+cleanup() {
+	kill "$broker_pid" 2>/dev/null || :
+	wait "$broker_pid" 2>/dev/null || :
+}
+trap cleanup EXIT INT TERM
+
+socket="/tmp/darling-screenshot-$(id -u).sock"
+attempt=0
+while [ ! -S "$socket" ]; do
+	if ! kill -0 "$broker_pid" 2>/dev/null; then
+		wait "$broker_pid"
+		exit 1
+	fi
+	attempt=$((attempt + 1))
+	if [ "$attempt" -ge 100 ]; then
+		echo "Screenshot broker did not become ready" >&2
+		exit 1
+	fi
+	sleep 0.05
+done
+
+"$install_root/bin/darling" exec \
+	/Applications/Utilities/Screenshot.app/Contents/MacOS/Screenshot "$@"
+app_status=$?
+if [ "$app_status" -ne 0 ]; then
+	exit "$app_status"
+fi
+
+wait "$broker_pid"
+broker_status=$?
+trap - EXIT INT TERM
+exit "$broker_status"
