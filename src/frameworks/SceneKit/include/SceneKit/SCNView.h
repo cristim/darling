@@ -19,6 +19,16 @@
 
 #include <AppKit/NSView.h>
 
+@class SCNScene;
+@class NSColor;
+
 @interface SCNView : NSView
+{
+    SCNScene *_scene;
+    NSColor *_backgroundColor;
+}
+
+@property (nonatomic, retain) SCNScene *scene;
+@property (nonatomic, retain) NSColor *backgroundColor;
 
 @end
