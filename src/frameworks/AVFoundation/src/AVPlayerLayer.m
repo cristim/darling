@@ -18,8 +18,32 @@
 */
 
 #import <AVFoundation/AVPlayerLayer.h>
+#import <AVFoundation/AVPlayer.h>
 
 @implementation AVPlayerLayer
+
++ (instancetype)playerLayerWithPlayer:(AVPlayer *)player
+{
+    AVPlayerLayer *layer = [[[self alloc] init] autorelease];
+    layer.player = player;
+    return layer;
+}
+
+- (AVPlayer *)player { return _player; }
+
+- (void)setPlayer:(AVPlayer *)player
+{
+    if (_player != player) {
+        [_player release];
+        _player = [player retain];
+    }
+}
+
+- (void)dealloc
+{
+    [_player release];
+    [super dealloc];
+}
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];

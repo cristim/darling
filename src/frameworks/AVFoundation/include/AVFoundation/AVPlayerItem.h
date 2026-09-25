@@ -21,6 +21,11 @@
 
 extern NSString *const AVPlayerItemDidPlayToEndTimeNotification;
 
-@interface AVPlayerItem : NSObject
+@interface AVPlayerItem : NSObject {
+    NSURL *_URL;
+}
+
+- (instancetype)initWithURL:(NSURL *)URL;
++ (instancetype)playerItemWithURL:(NSURL *)URL;
 
 @end

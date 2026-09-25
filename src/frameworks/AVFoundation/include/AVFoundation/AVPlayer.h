@@ -19,6 +19,20 @@
 
 #include <Foundation/Foundation.h>
 
-@interface AVPlayer : NSObject
+@class AVPlayerItem;
+
+@interface AVPlayer : NSObject {
+    AVPlayerItem *_currentItem;
+}
+
+- (instancetype)initWithURL:(NSURL *)URL;
+- (instancetype)initWithPlayerItem:(AVPlayerItem *)item;
++ (instancetype)playerWithURL:(NSURL *)URL;
++ (instancetype)playerWithPlayerItem:(AVPlayerItem *)item;
+
+@property (nonatomic, readonly, retain) AVPlayerItem *currentItem;
+- (void)replaceCurrentItemWithPlayerItem:(AVPlayerItem *)item;
+- (void)play;
+- (void)pause;
 
 @end

@@ -21,6 +21,24 @@
 
 @implementation AVPlayerItem
 
+- (instancetype)initWithURL:(NSURL *)URL
+{
+    if ((self = [super init]))
+        _URL = [URL copy];
+    return self;
+}
+
++ (instancetype)playerItemWithURL:(NSURL *)URL
+{
+    return [[[self alloc] initWithURL:URL] autorelease];
+}
+
+- (void)dealloc
+{
+    [_URL release];
+    [super dealloc];
+}
+
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];
 }

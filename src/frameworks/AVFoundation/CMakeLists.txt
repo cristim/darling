@@ -526,4 +526,5 @@ add_framework(AVFoundation
         system
         objc
         Foundation
+        QuartzCore
 )

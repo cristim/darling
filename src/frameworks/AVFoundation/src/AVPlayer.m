@@ -18,8 +18,52 @@
 */
 
 #import <AVFoundation/AVPlayer.h>
+#import <AVFoundation/AVPlayerItem.h>
 
 @implementation AVPlayer
+
+- (instancetype)initWithURL:(NSURL *)URL
+{
+    return [self initWithPlayerItem:[AVPlayerItem playerItemWithURL:URL]];
+}
+
+- (instancetype)initWithPlayerItem:(AVPlayerItem *)item
+{
+    if ((self = [super init]))
+        _currentItem = [item retain];
+    return self;
+}
+
++ (instancetype)playerWithURL:(NSURL *)URL
+{
+    return [[[self alloc] initWithURL:URL] autorelease];
+}
+
++ (instancetype)playerWithPlayerItem:(AVPlayerItem *)item
+{
+    return [[[self alloc] initWithPlayerItem:item] autorelease];
+}
+
+- (AVPlayerItem *)currentItem { return _currentItem; }
+
+- (void)replaceCurrentItemWithPlayerItem:(AVPlayerItem *)item
+{
+    if (_currentItem != item) {
+        [_currentItem release];
+        _currentItem = [item retain];
+    }
+}
+
+// Decoding and playback are not available yet; these methods leave the
+// player paused rather than claiming that media is being presented.
+- (void)play { }
+- (void)pause { }
+
+- (void)dealloc
+{
+    [_currentItem release];
+    [super dealloc];
+}
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];

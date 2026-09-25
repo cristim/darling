@@ -17,8 +17,15 @@
  along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <Foundation/Foundation.h>
+#include <QuartzCore/CALayer.h>
 
-@interface AVPlayerLayer : NSObject
+@class AVPlayer;
+
+@interface AVPlayerLayer : CALayer {
+    AVPlayer *_player;
+}
+
++ (instancetype)playerLayerWithPlayer:(AVPlayer *)player;
+@property (nonatomic, retain) AVPlayer *player;
 
 @end
