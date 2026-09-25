@@ -3,19 +3,113 @@
 #include <dispatch/dispatch.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/cursorfont.h>
+#include <X11/keysym.h>
 #include <png.h>
+#include <errno.h>
 #include <setjmp.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/select.h>
 #include <time.h>
 #include <unistd.h>
 
 #define SCREENSHOT_SERVICE "com.apple.systemuiserver.screencapture"
 
 static unsigned int capture_number;
+
+struct capture_rect {
+    int x, y;
+    unsigned int width, height;
+};
+
+static void draw_selection(Display *display, Window root, GC gc,
+                           int x0, int y0, int x1, int y1)
+{
+    int x = x0 < x1 ? x0 : x1;
+    int y = y0 < y1 ? y0 : y1;
+    unsigned int width = x0 < x1 ? x1 - x0 : x0 - x1;
+    unsigned int height = y0 < y1 ? y1 - y0 : y0 - y1;
+    XDrawRectangle(display, root, gc, x, y, width, height);
+    XFlush(display);
+}
+
+static int select_capture_rect(Display *display, Window root, struct capture_rect *rect)
+{
+    Cursor cursor = XCreateFontCursor(display, XC_crosshair);
+    GC gc = XCreateGC(display, root, 0, NULL);
+    if (!cursor || !gc) {
+        if (gc) XFreeGC(display, gc);
+        if (cursor) XFreeCursor(display, cursor);
+        return -7;
+    }
+
+    XSetFunction(display, gc, GXxor);
+    XSetForeground(display, gc, WhitePixel(display, DefaultScreen(display)) ^
+                                BlackPixel(display, DefaultScreen(display)));
+    XSetSubwindowMode(display, gc, IncludeInferiors);
+    int grabbed = XGrabPointer(display, root, False,
+                               ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+                               GrabModeAsync, GrabModeAsync, root, cursor, CurrentTime);
+    if (grabbed != GrabSuccess) {
+        XFreeGC(display, gc);
+        XFreeCursor(display, cursor);
+        return -7;
+    }
+    XGrabKeyboard(display, root, False, GrabModeAsync, GrabModeAsync, CurrentTime);
+
+    int started = 0, drawn = 0, x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    int result = -8;
+    for (;;) {
+        if (!XPending(display)) {
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(ConnectionNumber(display), &fds);
+            struct timeval timeout = { .tv_sec = 120 };
+            int ready = select(ConnectionNumber(display) + 1, &fds, NULL, NULL, &timeout);
+            if (ready < 0 && errno == EINTR) continue;
+            if (ready <= 0) break;
+        }
+        XEvent event;
+        XNextEvent(display, &event);
+        if (event.type == KeyPress && XLookupKeysym(&event.xkey, 0) == XK_Escape)
+            break;
+        if (event.type == ButtonPress && event.xbutton.button == Button1) {
+            if (drawn) draw_selection(display, root, gc, x0, y0, x1, y1);
+            x0 = x1 = event.xbutton.x_root;
+            y0 = y1 = event.xbutton.y_root;
+            started = 1;
+            drawn = 0;
+        } else if (event.type == MotionNotify && started) {
+            if (drawn) draw_selection(display, root, gc, x0, y0, x1, y1);
+            x1 = event.xmotion.x_root;
+            y1 = event.xmotion.y_root;
+            draw_selection(display, root, gc, x0, y0, x1, y1);
+            drawn = 1;
+        } else if (event.type == ButtonRelease && event.xbutton.button == Button1 && started) {
+            if (drawn) draw_selection(display, root, gc, x0, y0, x1, y1);
+            x1 = event.xbutton.x_root;
+            y1 = event.xbutton.y_root;
+            rect->x = x0 < x1 ? x0 : x1;
+            rect->y = y0 < y1 ? y0 : y1;
+            rect->width = x0 < x1 ? x1 - x0 : x0 - x1;
+            rect->height = y0 < y1 ? y1 - y0 : y0 - y1;
+            if (rect->width && rect->height) result = 0;
+            drawn = 0;
+            break;
+        }
+    }
+    if (drawn) draw_selection(display, root, gc, x0, y0, x1, y1);
+    XUngrabKeyboard(display, CurrentTime);
+    XUngrabPointer(display, CurrentTime);
+    XFreeGC(display, gc);
+    XFreeCursor(display, cursor);
+    XSync(display, False);
+    return result;
+}
 
 static void write_png(png_structp png, png_bytep data, png_size_t length)
 {
@@ -44,7 +138,7 @@ static unsigned char pixel_component(unsigned long pixel, unsigned long mask)
     return (unsigned char)((component * 255 + mask / 2) / mask);
 }
 
-static int capture_display(uid_t client_uid)
+static int capture_display(uid_t client_uid, int interactive)
 {
     Display *display = XOpenDisplay(NULL);
     if (!display)
@@ -61,7 +155,17 @@ static int capture_display(uid_t client_uid)
         return -2;
     }
 
-    XImage *image = XGetImage(display, root, 0, 0, width, height, AllPlanes, ZPixmap);
+    struct capture_rect rect = { 0, 0, width, height };
+    if (interactive) {
+        int selection_status = select_capture_rect(display, root, &rect);
+        if (selection_status) {
+            XCloseDisplay(display);
+            return selection_status;
+        }
+    }
+    width = rect.width;
+    height = rect.height;
+    XImage *image = XGetImage(display, root, rect.x, rect.y, width, height, AllPlanes, ZPixmap);
     if (!image) {
         XCloseDisplay(display);
         return -3;
@@ -144,12 +248,21 @@ static void handle_request(xpc_connection_t peer, xpc_object_t request)
         return;
 
     // Screenshot.app sends { message: 1, nowait: true, args: ["-uUpi"] }.
-    // This initial implementation captures the current X11 display to PNG.
-    // An interactive selection UI and recording remain separate work.
+    // The -i option selects an X11 region before saving a PNG.
+    // Toolbar controls, window selection, and recording remain separate work.
     if (xpc_dictionary_get_uint64(request, "message") != 1)
         return;
 
-    int capture_status = capture_display(xpc_connection_get_euid(peer));
+    int interactive = 0;
+    xpc_object_t args = xpc_dictionary_get_value(request, "args");
+    if (args && xpc_get_type(args) == XPC_TYPE_ARRAY) {
+        for (size_t i = 0; i < xpc_array_get_count(args); i++) {
+            const char *arg = xpc_array_get_string(args, i);
+            if (arg && arg[0] == '-' && strchr(arg, 'i'))
+                interactive = 1;
+        }
+    }
+    int capture_status = capture_display(xpc_connection_get_euid(peer), interactive);
 
     xpc_object_t reply = xpc_dictionary_create_reply(request);
     if (reply) {
