@@ -18,7 +18,19 @@
 */
 
 #include <Foundation/Foundation.h>
+#include <QuartzCore/CATransform3D.h>
 
 @interface SCNCamera : NSObject
+{
+    double _fieldOfView;
+    double _zNear;
+    double _zFar;
+    CATransform3D _projectionTransform;
+}
+
+@property (nonatomic) double fieldOfView;
+@property (nonatomic) double zNear;
+@property (nonatomic) double zFar;
+@property (nonatomic) CATransform3D projectionTransform;
 
 @end

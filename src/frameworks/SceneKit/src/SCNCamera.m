@@ -21,6 +21,22 @@
 
 @implementation SCNCamera
 
+@synthesize fieldOfView = _fieldOfView;
+@synthesize zNear = _zNear;
+@synthesize zFar = _zFar;
+@synthesize projectionTransform = _projectionTransform;
+
+- (instancetype)init
+{
+    if ((self = [super init])) {
+        _fieldOfView = 60;
+        _zNear = 1;
+        _zFar = 100;
+        _projectionTransform = (CATransform3D){ .m11 = 1, .m22 = 1, .m33 = 1, .m44 = 1 };
+    }
+    return self;
+}
+
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];

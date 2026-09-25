@@ -55,8 +55,19 @@ static SCNNode *SCNNodeFromArchive(NSArray *objects, id reference)
         [node setLight:[[[SCNLight alloc] init] autorelease]];
     NSDictionary *camera = SCNArchiveObject(objects, [record objectForKey:@"camera"]);
     NSDictionary *cameraClass = SCNArchiveObject(objects, [camera objectForKey:@"$class"]);
-    if ([[cameraClass objectForKey:@"$classname"] isEqualToString:@"SCNCamera"])
-        [node setCamera:[[[SCNCamera alloc] init] autorelease]];
+    if ([[cameraClass objectForKey:@"$classname"] isEqualToString:@"SCNCamera"]) {
+        SCNCamera *decodedCamera = [[[SCNCamera alloc] init] autorelease];
+        NSNumber *fieldOfView = [camera objectForKey:@"yFov"];
+        if ([fieldOfView respondsToSelector:@selector(doubleValue)] && [fieldOfView doubleValue] > 0)
+            [decodedCamera setFieldOfView:[fieldOfView doubleValue]];
+        NSNumber *zNear = [camera objectForKey:@"zNear"];
+        if ([zNear respondsToSelector:@selector(doubleValue)])
+            [decodedCamera setZNear:[zNear doubleValue]];
+        NSNumber *zFar = [camera objectForKey:@"zFar"];
+        if ([zFar respondsToSelector:@selector(doubleValue)])
+            [decodedCamera setZFar:[zFar doubleValue]];
+        [node setCamera:decodedCamera];
+    }
 
     NSData *position = [record objectForKey:@"position"];
     if ([position isKindOfClass:[NSData class]] && [position length] == sizeof(float) * 3) {
