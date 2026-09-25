@@ -26,10 +26,16 @@
     AMWorkflowMetaData *_metaData;
     NSURL *_fileURL;
     BOOL _hasUnsavedChanges;
+    NSMutableArray *_actions;
 }
 
 @property BOOL hasUnsavedChanges;
 @property (copy) NSURL *fileURL;
+
+- (NSArray *)actions;
+- (void)addAction:(id)action;
+- (void)insertAction:(id)action atIndex:(NSUInteger)index;
+- (void)removeAction:(id)action;
 
 - (instancetype)initWithContentsOfURL:(NSURL *)fileURL error:(NSError **)outError;
 - (instancetype)initWithFileWrapper:(NSFileWrapper *)fileWrapper error:(NSError **)outError;

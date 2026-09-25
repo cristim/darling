@@ -31,6 +31,7 @@
     self = [super init];
     if (self != nil) {
         _metaData = [[AMWorkflowMetaData alloc] init];
+        _actions = [[NSMutableArray alloc] init];
     }
     return self;
 }
@@ -39,37 +40,119 @@
 {
     [_metaData release];
     [_fileURL release];
+    [_actions release];
     [super dealloc];
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)fileURL error:(NSError **)outError
 {
-    if (outError != NULL)
-        *outError = AMWorkflowFormatUnsupportedError();
-    [self release];
-    return nil;
+    NSFileWrapper *wrapper = [[NSFileWrapper alloc] initWithURL: fileURL options: 0 error: outError];
+    if (wrapper == nil) {
+        [self release];
+        return nil;
+    }
+    self = [self initWithFileWrapper: wrapper error: outError];
+    [wrapper release];
+    if (self != nil)
+        [self setFileURL: fileURL];
+    return self;
 }
 
 - (instancetype)initWithFileWrapper:(NSFileWrapper *)fileWrapper error:(NSError **)outError
 {
+    self = [self init];
+    if (self == nil)
+        return nil;
+
+    NSFileWrapper *document = fileWrapper;
+    if ([fileWrapper isDirectory]) {
+        document = [fileWrapper fileWrappers][@"Contents"];
+        document = [document fileWrappers][@"document.wflow"];
+    }
+    NSData *data = [document isRegularFile] ? [document regularFileContents] : nil;
+    NSDictionary *plist = data != nil ?
+        [NSPropertyListSerialization propertyListWithData: data options: 0 format: NULL error: outError] : nil;
+    NSArray *actions = [plist isKindOfClass: [NSDictionary class]] ? plist[@"actions"] : nil;
+    if (![actions isKindOfClass: [NSArray class]]) {
+        if (outError != NULL)
+            *outError = AMWorkflowFormatUnsupportedError();
+        [self release];
+        return nil;
+    }
+    [_actions addObjectsFromArray: actions];
+    _hasUnsavedChanges = NO;
     if (outError != NULL)
-        *outError = AMWorkflowFormatUnsupportedError();
-    [self release];
-    return nil;
+        *outError = nil;
+    return self;
 }
 
 - (BOOL)writeToURL:(NSURL *)fileURL error:(NSError **)outError
 {
-    if (outError != NULL)
-        *outError = AMWorkflowFormatUnsupportedError();
-    return NO;
+    NSFileWrapper *wrapper = [self fileWrapperForWritingReturningSavedPropertyList: NULL
+        documentType: nil originalContentsFileWrapper: nil error: outError];
+    if (wrapper == nil)
+        return NO;
+    BOOL written = [wrapper writeToURL: fileURL options: 0 originalContentsURL: nil error: outError];
+    if (written) {
+        [self setFileURL: fileURL];
+        _hasUnsavedChanges = NO;
+    }
+    return written;
 }
 
 - (NSFileWrapper *)fileWrapperForWritingReturningSavedPropertyList:(id *)propertyList documentType:(NSString *)documentType originalContentsFileWrapper:(NSFileWrapper *)original error:(NSError **)outError
 {
+    for (id action in _actions) {
+        if (![action isKindOfClass: [NSDictionary class]]) {
+            if (outError != NULL)
+                *outError = AMWorkflowFormatUnsupportedError();
+            return nil;
+        }
+    }
+    NSDictionary *plist = @{ @"AMDocumentVersion": @"2", @"actions": _actions };
+    NSData *data = [NSPropertyListSerialization dataWithPropertyList: plist
+        format: NSPropertyListXMLFormat_v1_0 options: 0 error: outError];
+    if (data == nil)
+        return nil;
+    if (propertyList != NULL)
+        *propertyList = plist;
+
+    NSFileWrapper *document = [[NSFileWrapper alloc] initRegularFileWithContents: data];
+    [document setPreferredFilename: @"document.wflow"];
+    NSFileWrapper *contents = [[NSFileWrapper alloc] initDirectoryWithFileWrappers:
+        @{ @"document.wflow": document }];
+    [document release];
+    [contents setPreferredFilename: @"Contents"];
+    NSFileWrapper *package = [[NSFileWrapper alloc] initDirectoryWithFileWrappers:
+        @{ @"Contents": contents }];
+    [contents release];
     if (outError != NULL)
-        *outError = AMWorkflowFormatUnsupportedError();
-    return nil;
+        *outError = nil;
+    return [package autorelease];
+}
+
+- (NSArray *)actions
+{
+    return [[_actions copy] autorelease];
+}
+
+- (void)addAction:(id)action
+{
+    [self insertAction: action atIndex: [_actions count]];
+}
+
+- (void)insertAction:(id)action atIndex:(NSUInteger)index
+{
+    [_actions insertObject: action atIndex: index];
+    _hasUnsavedChanges = YES;
+}
+
+- (void)removeAction:(id)action
+{
+    if ([_actions containsObject: action]) {
+        [_actions removeObject: action];
+        _hasUnsavedChanges = YES;
+    }
 }
 
 - (AMWorkflowMetaData *)_workflowMetaData

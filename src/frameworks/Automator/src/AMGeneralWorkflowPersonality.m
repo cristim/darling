@@ -39,6 +39,19 @@
     return NO;
 }
 
+- (NSString *)unlocalizedWorkflowType
+{
+    return AMDocumentTypeWorkflow;
+}
+
+- (BOOL)canSaveWorkflow:(id)workflow atURL:(NSURL *)url forInstallation:(BOOL)install error:(NSError **)error
+{
+    BOOL supported = workflow != nil && !install && (url == nil || [url isFileURL]);
+    if (error != NULL)
+        *error = supported ? nil : AMWorkflowFormatUnsupportedError();
+    return supported;
+}
+
 AM_STUB_FORWARDING
 
 @end

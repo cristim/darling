@@ -27,6 +27,7 @@
 + (id)workflowPersonalityForTypeIdentifier:(NSString *)typeIdentifier;
 @property (readonly) NSString *documentType;
 @property (readonly) NSString *displayLabel;
+@property (readonly) NSString *unlocalizedWorkflowType;
 @property (readonly) BOOL isPluginType;
 @property (readonly) BOOL showInTitlebar;
 
