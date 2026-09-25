@@ -15,6 +15,12 @@ negative status on failure. A working `DISPLAY` must be present in launchd's
 environment before it starts the service. For a separate X server, set it with
 `launchctl setenv DISPLAY :N`.
 
+On arm64 hosts, Screenshot.app's arm64e executable also needs Darling's
+`DARLING_DISABLE_PTRAUTH=1` compatibility switch because its signed Swift
+function pointers cross into arm64 Swift libraries. With that switch set on
+the Screenshot.app invocation, two consecutive invocations saved valid PNGs
+in an isolated Xvfb prefix.
+
 This handles one full screen image for the observed request. Screenshot.app's
 interactive toolbar, area/window selection, and video recording are not yet
 implemented. Darling also needs the launchd repeated-bootstrap-lookup fix to
