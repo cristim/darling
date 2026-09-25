@@ -18,14 +18,36 @@
 */
 
 #import <Automator/AMTemplateChooserItem.h>
+#import <AppKit/NSImage.h>
 #import "AMStubSignature.h"
+#import <dispatch/dispatch.h>
 
 @implementation AMTemplateChooserItem
 
-// No templates are installed.
 + (NSArray *)templateChooserItems
 {
-    return @[];
+    static AMTemplateChooserItem *workflowItem;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        workflowItem = [[self alloc] init];
+    });
+    return @[ workflowItem ];
+}
+
+- (NSString *)imageTitle
+{
+    return @"Workflow";
+}
+
+- (NSString *)templateDescription
+{
+    return @"Create a workflow by adding actions.";
+}
+
+- (id)imageRepresentation
+{
+    NSString *iconPath = [[NSBundle mainBundle] pathForResource: @"AppIcon" ofType: @"icns"];
+    return [[[NSImage alloc] initWithContentsOfFile: iconPath] autorelease];
 }
 
 AM_STUB_FORWARDING
