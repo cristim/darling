@@ -1726,6 +1726,7 @@ job_t
 job_new_anonymous(jobmgr_t jm, pid_t anonpid)
 {
 	struct proc_bsdshortinfo proc;
+	bool have_proc = false;
 	bool shutdown_state;
 	job_t jp = NULL, jr = NULL;
 	uid_t kp_euid, kp_uid, kp_svuid;
@@ -1745,10 +1746,41 @@ job_new_anonymous(jobmgr_t jm, pid_t anonpid)
 		return NULL;
 	}
 
+	/* Darling's proc_pidinfo currently opens /proc/<pid> in the host PID
+	 * namespace. A guest PID can refer to an unrelated host process or to no
+	 * host process at all. For the current MIG caller, use the executable path
+	 * resolved by darlingserver and the audited credentials instead.
+	 */
+#ifdef DARLING
+	struct ldcred *caller = runtime_get_caller_creds();
+	if (caller && caller->pid == anonpid) {
+		char executable_path[PROC_PIDPATHINFO_MAXSIZE];
+		if (proc_pidpath(anonpid, executable_path, sizeof(executable_path)) <= 0) {
+			errno = ESRCH;
+			return NULL;
+		}
+		const char *name = strrchr(executable_path, '/');
+		memset(&proc, 0, sizeof(proc));
+		proc.pbsi_pid = anonpid;
+		proc.pbsi_status = SRUN;
+		proc.pbsi_uid = caller->euid;
+		proc.pbsi_ruid = caller->uid;
+		proc.pbsi_svuid = caller->euid;
+		proc.pbsi_gid = caller->egid;
+		proc.pbsi_rgid = caller->gid;
+		proc.pbsi_svgid = caller->egid;
+		strlcpy(proc.pbsi_comm, name ? name + 1 : executable_path,
+				sizeof(proc.pbsi_comm));
+		/* Parent PID is not available from this path lookup. */
+		proc.pbsi_ppid = 0;
+		have_proc = true;
+	}
+#endif
 	/* libproc returns the number of bytes written into the buffer upon success,
 	 * zero on failure. I'd much rather it return -1 on failure, like sysctl(3).
 	 */
-	if (proc_pidinfo(anonpid, PROC_PIDT_SHORTBSDINFO, 1, &proc, PROC_PIDT_SHORTBSDINFO_SIZE) == 0) {
+	if (!have_proc && proc_pidinfo(anonpid, PROC_PIDT_SHORTBSDINFO, 1,
+			&proc, PROC_PIDT_SHORTBSDINFO_SIZE) == 0) {
 		if (errno != ESRCH) {
 			(void)jobmgr_assumes_zero(jm, errno);
 		}
