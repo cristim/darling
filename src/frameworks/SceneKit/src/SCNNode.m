@@ -22,6 +22,20 @@
 @implementation SCNNode
 
 @synthesize name = _name;
+@synthesize light = _light;
+@synthesize geometry = _geometry;
+
+static void SCNEnumerateDescendants(SCNNode *node, void (^block)(SCNNode *, BOOL *), BOOL *stop)
+{
+    for (SCNNode *child in [[[node childNodes] copy] autorelease]) {
+        block(child, stop);
+        if (*stop)
+            return;
+        SCNEnumerateDescendants(child, block, stop);
+        if (*stop)
+            return;
+    }
+}
 
 - (instancetype)init
 {
@@ -36,6 +50,8 @@
 {
     [_name release];
     [_childNodes release];
+    [_light release];
+    [_geometry release];
     [super dealloc];
 }
 
@@ -62,6 +78,14 @@
         }
     }
     return nil;
+}
+
+- (void)enumerateChildNodesUsingBlock:(void (^)(SCNNode *, BOOL *))block
+{
+    if (!block)
+        return;
+    BOOL stop = NO;
+    SCNEnumerateDescendants(self, block, &stop);
 }
 
 - (SCNVector3)worldPosition

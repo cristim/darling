@@ -21,6 +21,14 @@
 
 @implementation SCNGeometry
 
+@synthesize materials = _materials;
+
+- (void)dealloc
+{
+    [_materials release];
+    [super dealloc];
+}
+
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];

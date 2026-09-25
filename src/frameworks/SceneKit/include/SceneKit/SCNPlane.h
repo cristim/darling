@@ -17,8 +17,16 @@
  along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <Foundation/Foundation.h>
+#include <SceneKit/SCNGeometry.h>
 
-@interface SCNPlane : NSObject
+@interface SCNPlane : SCNGeometry
+{
+    double _width;
+    double _height;
+}
+
++ (instancetype)planeWithWidth:(double)width height:(double)height;
+@property (nonatomic) double width;
+@property (nonatomic) double height;
 
 @end

@@ -19,6 +19,7 @@
 
 #import <SceneKit/SCNScene.h>
 #import <SceneKit/SCNNode.h>
+#import <SceneKit/SCNLight.h>
 #import <CoreFoundation/CFBase.h>
 
 typedef const struct __CFKeyedArchiverUID *CFKeyedArchiverUIDRef;
@@ -47,6 +48,10 @@ static SCNNode *SCNNodeFromArchive(NSArray *objects, id reference)
     id name = SCNArchiveObject(objects, [record objectForKey:@"name"]);
     if ([name isKindOfClass:[NSString class]])
         [node setName:name];
+    NSDictionary *light = SCNArchiveObject(objects, [record objectForKey:@"light"]);
+    NSDictionary *lightClass = SCNArchiveObject(objects, [light objectForKey:@"$class"]);
+    if ([[lightClass objectForKey:@"$classname"] isEqualToString:@"SCNLight"])
+        [node setLight:[[[SCNLight alloc] init] autorelease]];
 
     NSData *position = [record objectForKey:@"position"];
     if ([position isKindOfClass:[NSData class]] && [position length] == sizeof(float) * 3) {

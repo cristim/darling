@@ -21,6 +21,17 @@
 
 @implementation SCNPlane
 
+@synthesize width = _width;
+@synthesize height = _height;
+
++ (instancetype)planeWithWidth:(double)width height:(double)height
+{
+    SCNPlane *plane = [[[self alloc] init] autorelease];
+    plane.width = width;
+    plane.height = height;
+    return plane;
+}
+
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];

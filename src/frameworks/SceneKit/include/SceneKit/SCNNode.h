@@ -21,6 +21,7 @@
 
 typedef struct { double x, y, z; } SCNVector3;
 typedef struct { double x, y, z, w; } SCNVector4;
+@class SCNLight, SCNGeometry;
 
 @interface SCNNode : NSObject
 {
@@ -28,13 +29,18 @@ typedef struct { double x, y, z, w; } SCNVector4;
     NSMutableArray *_childNodes;
     SCNVector3 _worldPosition;
     SCNVector4 _worldOrientation;
+    SCNLight *_light;
+    SCNGeometry *_geometry;
 }
 
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, readonly, retain) NSArray *childNodes;
+@property (nonatomic, retain) SCNLight *light;
+@property (nonatomic, retain) SCNGeometry *geometry;
 
 - (void)addChildNode:(SCNNode *)child;
 - (SCNNode *)childNodeWithName:(NSString *)name recursively:(BOOL)recursively;
+- (void)enumerateChildNodesUsingBlock:(void (^)(SCNNode *child, BOOL *stop))block;
 - (SCNVector3)worldPosition;
 - (void)setWorldPosition:(SCNVector3)position;
 - (SCNVector4)worldOrientation;

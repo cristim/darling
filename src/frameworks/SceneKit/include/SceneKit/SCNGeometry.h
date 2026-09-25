@@ -20,5 +20,10 @@
 #include <Foundation/Foundation.h>
 
 @interface SCNGeometry : NSObject
+{
+    NSArray *_materials;
+}
+
+@property (nonatomic, copy) NSArray *materials;
 
 @end
