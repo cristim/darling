@@ -21,14 +21,78 @@
 
 @implementation IKDeviceBrowserView
 
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
-{
-    return [NSMethodSignature signatureWithObjCTypes: "v@:"];
+- (void) setDefaults {
+    _displaysLocalCameras = YES;
+    _displaysNetworkCameras = YES;
+    _displaysLocalScanners = YES;
+    _displaysNetworkScanners = YES;
+    _mode = IKDeviceBrowserViewDisplayModeTable;
 }
 
-- (void)forwardInvocation:(NSInvocation *)anInvocation
-{
-    NSLog(@"Stub called: %@ in %@", NSStringFromSelector([anInvocation selector]), [self class]);
+- (instancetype) initWithFrame: (NSRect) frame {
+    self = [super initWithFrame: frame];
+    if (self != nil)
+        [self setDefaults];
+    return self;
+}
+
+- (instancetype) initWithCoder: (NSCoder *) coder {
+    self = [super initWithCoder: coder];
+    if (self != nil)
+        [self setDefaults];
+    return self;
+}
+
+- (id<IKDeviceBrowserViewDelegate>) delegate {
+    return _delegate;
+}
+
+- (void) setDelegate: (id<IKDeviceBrowserViewDelegate>) delegate {
+    _delegate = delegate;
+}
+
+- (BOOL) displaysLocalCameras {
+    return _displaysLocalCameras;
+}
+
+- (void) setDisplaysLocalCameras: (BOOL) displays {
+    _displaysLocalCameras = displays;
+}
+
+- (BOOL) displaysNetworkCameras {
+    return _displaysNetworkCameras;
+}
+
+- (void) setDisplaysNetworkCameras: (BOOL) displays {
+    _displaysNetworkCameras = displays;
+}
+
+- (BOOL) displaysLocalScanners {
+    return _displaysLocalScanners;
+}
+
+- (void) setDisplaysLocalScanners: (BOOL) displays {
+    _displaysLocalScanners = displays;
+}
+
+- (BOOL) displaysNetworkScanners {
+    return _displaysNetworkScanners;
+}
+
+- (void) setDisplaysNetworkScanners: (BOOL) displays {
+    _displaysNetworkScanners = displays;
+}
+
+- (IKDeviceBrowserViewDisplayMode) mode {
+    return _mode;
+}
+
+- (void) setMode: (IKDeviceBrowserViewDisplayMode) mode {
+    _mode = mode;
+}
+
+- (ICDevice *) selectedDevice {
+    return nil;
 }
 
 @end

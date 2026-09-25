@@ -17,8 +17,8 @@
  along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <Foundation/Foundation.h>
+#include <AppKit/NSView.h>
 
-@interface IKCameraDeviceView : NSObject
+@interface IKCameraDeviceView : NSView
 
 @end
