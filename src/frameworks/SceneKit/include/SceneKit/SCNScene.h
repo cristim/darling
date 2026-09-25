@@ -19,8 +19,14 @@
 
 #include <Foundation/Foundation.h>
 
+@class SCNNode;
+
 @interface SCNScene : NSObject
+{
+    SCNNode *_rootNode;
+}
 
 + (instancetype)sceneNamed:(NSString *)name;
+@property (nonatomic, readonly, retain) SCNNode *rootNode;
 
 @end

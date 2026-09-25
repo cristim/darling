@@ -21,6 +21,69 @@
 
 @implementation SCNNode
 
+@synthesize name = _name;
+
+- (instancetype)init
+{
+    if ((self = [super init])) {
+        _childNodes = [[NSMutableArray alloc] init];
+        _worldOrientation = (SCNVector4){0, 0, 0, 1};
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    [_name release];
+    [_childNodes release];
+    [super dealloc];
+}
+
+- (NSArray *)childNodes
+{
+    return _childNodes;
+}
+
+- (void)addChildNode:(SCNNode *)child
+{
+    if (child)
+        [_childNodes addObject:child];
+}
+
+- (SCNNode *)childNodeWithName:(NSString *)name recursively:(BOOL)recursively
+{
+    for (SCNNode *child in _childNodes) {
+        if ([[child name] isEqualToString:name])
+            return child;
+        if (recursively) {
+            SCNNode *match = [child childNodeWithName:name recursively:YES];
+            if (match)
+                return match;
+        }
+    }
+    return nil;
+}
+
+- (SCNVector3)worldPosition
+{
+    return _worldPosition;
+}
+
+- (void)setWorldPosition:(SCNVector3)position
+{
+    _worldPosition = position;
+}
+
+- (SCNVector4)worldOrientation
+{
+    return _worldOrientation;
+}
+
+- (void)setWorldOrientation:(SCNVector4)orientation
+{
+    _worldOrientation = orientation;
+}
+
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {
     return [NSMethodSignature signatureWithObjCTypes: "v@:"];
