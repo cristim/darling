@@ -29,8 +29,10 @@
 
 - (instancetype)initWithPlayerItem:(AVPlayerItem *)item
 {
-    if ((self = [super init]))
+    if ((self = [super init])) {
         _currentItem = [item retain];
+        _automaticallyWaitsToMinimizeStalling = YES;
+    }
     return self;
 }
 
@@ -45,6 +47,10 @@
 }
 
 - (AVPlayerItem *)currentItem { return _currentItem; }
+- (AVPlayerStatus)status { return AVPlayerStatusUnknown; }
+- (NSError *)error { return nil; }
+- (BOOL)automaticallyWaitsToMinimizeStalling { return _automaticallyWaitsToMinimizeStalling; }
+- (void)setAutomaticallyWaitsToMinimizeStalling:(BOOL)waits { _automaticallyWaitsToMinimizeStalling = waits; }
 
 - (void)replaceCurrentItemWithPlayerItem:(AVPlayerItem *)item
 {

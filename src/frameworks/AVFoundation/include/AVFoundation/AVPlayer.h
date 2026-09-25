@@ -21,8 +21,15 @@
 
 @class AVPlayerItem;
 
+typedef NS_ENUM(NSInteger, AVPlayerStatus) {
+    AVPlayerStatusUnknown = 0,
+    AVPlayerStatusReadyToPlay = 1,
+    AVPlayerStatusFailed = 2,
+};
+
 @interface AVPlayer : NSObject {
     AVPlayerItem *_currentItem;
+    BOOL _automaticallyWaitsToMinimizeStalling;
 }
 
 - (instancetype)initWithURL:(NSURL *)URL;
@@ -31,6 +38,9 @@
 + (instancetype)playerWithPlayerItem:(AVPlayerItem *)item;
 
 @property (nonatomic, readonly, retain) AVPlayerItem *currentItem;
+@property (nonatomic, readonly) AVPlayerStatus status;
+@property (nonatomic, readonly, retain) NSError *error;
+@property (nonatomic) BOOL automaticallyWaitsToMinimizeStalling;
 - (void)replaceCurrentItemWithPlayerItem:(AVPlayerItem *)item;
 - (void)play;
 - (void)pause;

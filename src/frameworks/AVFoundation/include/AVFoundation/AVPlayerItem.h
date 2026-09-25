@@ -21,11 +21,19 @@
 
 extern NSString *const AVPlayerItemDidPlayToEndTimeNotification;
 
+typedef NS_ENUM(NSInteger, AVPlayerItemStatus) {
+    AVPlayerItemStatusUnknown = 0,
+    AVPlayerItemStatusReadyToPlay = 1,
+    AVPlayerItemStatusFailed = 2,
+};
+
 @interface AVPlayerItem : NSObject {
     NSURL *_URL;
 }
 
 - (instancetype)initWithURL:(NSURL *)URL;
 + (instancetype)playerItemWithURL:(NSURL *)URL;
+@property (nonatomic, readonly) AVPlayerItemStatus status;
+@property (nonatomic, readonly, retain) NSError *error;
 
 @end

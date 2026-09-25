@@ -33,6 +33,9 @@
     return [[[self alloc] initWithURL:URL] autorelease];
 }
 
+- (AVPlayerItemStatus)status { return AVPlayerItemStatusUnknown; }
+- (NSError *)error { return nil; }
+
 - (void)dealloc
 {
     [_URL release];
