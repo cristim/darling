@@ -1755,10 +1755,12 @@ job_new_anonymous(jobmgr_t jm, pid_t anonpid)
 	struct ldcred *caller = runtime_get_caller_creds();
 	if (caller && caller->pid == anonpid) {
 		char executable_path[PROC_PIDPATHINFO_MAXSIZE];
-		if (proc_pidpath(anonpid, executable_path, sizeof(executable_path)) <= 0) {
+		int path_length = proc_pidpath(anonpid, executable_path, sizeof(executable_path));
+		if (path_length <= 0 || path_length >= sizeof(executable_path)) {
 			errno = ESRCH;
 			return NULL;
 		}
+		executable_path[path_length] = '\0';
 		const char *name = strrchr(executable_path, '/');
 		memset(&proc, 0, sizeof(proc));
 		proc.pbsi_pid = anonpid;
