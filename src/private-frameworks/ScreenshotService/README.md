@@ -1,4 +1,4 @@
-# Screenshot XPC bootstrap
+# Screenshot XPC capture service
 
 macOS 26 Screenshot.app sends an asynchronous request to
 `com.apple.systemuiserver.screencapture` with this dictionary:
@@ -9,14 +9,17 @@ nowait: true
 args: ["-uUpi"]
 ```
 
-It accepts an empty dictionary as a reply. This service implements that XPC
-handshake only. It does not display the capture controls or create an image.
-Darling currently lacks a screen capture backend for this service; its
-`CGDisplayCreateImage` and `CGWindowListCreateImage` entry points are stubs.
+The service captures the X11 root window and writes a PNG to the requesting
+user's Desktop. It returns an XPC dictionary with `status: 0` on success or a
+negative status on failure. A working `DISPLAY` must be present in launchd's
+environment before it starts the service. For a separate X server, set it with
+`launchctl setenv DISPLAY :N`.
 
-In an isolated prefix, Screenshot.app exited 0 with this service, but displayed
-no window. Repeated invocations require Darling launchd commit `8644815fb`
-(`fix/bootstrap-repeated-lookup`). Without that fix, `bootstrap_look_up`
-returns `BOOTSTRAP_NO_MEMORY` (1105) for the second client because launchd
-cannot create its anonymous job from the guest PID. With the launchd fix,
-two consecutive Screenshot invocations returned an empty reply and exited 0.
+This handles one full screen image for the observed request. Screenshot.app's
+interactive toolbar, area/window selection, and video recording are not yet
+implemented. Darling also needs the launchd repeated-bootstrap-lookup fix to
+handle subsequent requests from new Screenshot.app processes.
+
+The backend uses XGetImage and libpng. libpng receives a write callback rather
+than a Darwin `FILE*`; the native libpng wrapper cannot write directly to a
+Darwin stdio stream.
