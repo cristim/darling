@@ -20,5 +20,14 @@
 #include <AppKit/AppKit.h>
 
 @interface AMLibraryViewController : NSViewController
+{
+    NSSearchField *_searchField;
+    NSTableView *_actionTable;
+    NSTextField *_emptyLabel;
+    NSArray *_actions;
+    NSArray *_visibleActions;
+}
+
+- (NSSearchField *)_searchField;
 
 @end
