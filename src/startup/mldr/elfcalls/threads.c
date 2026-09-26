@@ -207,6 +207,18 @@ static void* darling_thread_entry(void* p)
 	struct arg_struct* in_args = (struct arg_struct*) p;
 	struct arg_struct args;
 
+	// Keep signal handlers off this thread until its per-thread RPC socket
+	// exists. Both signal entry paths issue a dserver RPC, which aborts when
+	// t_server_socket is still unset.
+	sigset_t all_signals;
+	sigset_t old_signals;
+	sigfillset(&all_signals);
+	int sigmask_error = pthread_sigmask(SIG_BLOCK, &all_signals, &old_signals);
+	if (sigmask_error != 0) {
+		fprintf(stderr, "pthread_sigmask(SIG_BLOCK) failed: %s\n", strerror(sigmask_error));
+		abort();
+	}
+
 	memcpy(&args, in_args, sizeof(args));
 
 	dthread_t dthread = args.pth;
@@ -252,6 +264,14 @@ static void* darling_thread_entry(void* p)
 		munmap(t_freeaddr, t_freesize);
 		pthread_detach(pthread_self());
 		return NULL;
+	}
+
+	// Restore the inherited mask before the register variables below, whose
+	// values must not be clobbered by function calls.
+	sigmask_error = pthread_sigmask(SIG_SETMASK, &old_signals, NULL);
+	if (sigmask_error != 0) {
+		fprintf(stderr, "pthread_sigmask(SIG_SETMASK) failed: %s\n", strerror(sigmask_error));
+		abort();
 	}
 
 	void *stack_ptr = align_16(args.stack_addr);
