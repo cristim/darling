@@ -4,16 +4,21 @@
 	Apple's private framework behind the Quick Look preview UI. Nine of the local
 	apps link it, binding seven classes.
 
-	Declared here so the classes can be compiled and so callers building against
-	this framework see the same interfaces. The classes are referenced through the
-	Objective-C runtime by the callers that bind them, so the header exists for the
-	build rather than for the linker.
+	Declared so the classes can be compiled, and so callers building against this
+	framework see the same interfaces. The apps reach these classes through the
+	Objective-C runtime rather than the linker for the class objects themselves, so
+	the header is here for the build.
+
+	Subclass fidelity is limited by the headers on this system. NSView.h, NSPanel.h
+	and NSFont.h all pull in ApplicationServices, which has no headers here, so
+	QLPreviewView and QLPreviewPanel are declared over NSObject rather than NSView
+	and NSPanel. The class symbols are emitted either way. Every app linking this
+	framework is itself blocked on AppKit, so the superclass only becomes
+	observable once AppKit exists; at that point these two should move onto their
+	real bases.
 */
 
-#ifndef QUICKLOOKUI_H
-#define QUICKLOOKUI_H
-
-#import <Cocoa/Cocoa.h>
+#import <Foundation/Foundation.h>
 
 @class QLPreviewDocument;
 
@@ -23,12 +28,12 @@
 @property (readonly) BOOL isReadable;
 @end
 
-@interface QLPreviewView : NSView
+@interface QLPreviewView : NSObject
 - (void)setPreviewDocument:(QLPreviewDocument*)document;
 - (QLPreviewDocument*)previewDocument;
 @end
 
-@interface QLPreviewPanel : NSPanel
+@interface QLPreviewPanel : NSObject
 + (QLPreviewPanel*)sharedPreviewPanel;
 - (void)makeKeyAndOrderFront:(id)sender;
 - (void)orderOut:(id)sender;
@@ -47,7 +52,5 @@
 @interface QLSeamlessOpener : NSObject
 @end
 
-@interface QLWarpingWindowEffect : NSView
+@interface QLWarpingWindowEffect : NSObject
 @end
-
-#endif

@@ -4,15 +4,20 @@
 	Apple's private framework behind the Quick Look preview UI. Nine of the local
 	apps link it, binding seven classes.
 
-	These are view and controller classes, and the honest implementation of a view
-	controller here is a real NSViewController that shows nothing: the class
-	exists so the caller's window and delegate wiring resolves, and a controller
-	with no view hierarchy is a state every caller already handles (an empty
-	preview). Returning a fabricated preview would be worse: the caller would
-	present a document it cannot actually render.
+	The class exists so the caller's window and delegate wiring resolves, and a
+	preview that renders nothing is a state every caller already handles. Returning
+	a fabricated preview would be worse: the caller would present a document it
+	cannot actually render.
+
+	Subclass fidelity is limited by the headers on this system. NSView.h and
+	NSPanel.h pull in ApplicationServices, which has no headers here, so QLPreviewView
+	and QLPreviewPanel are declared over NSObject rather than NSView and NSPanel.
+	The class symbols are emitted either way, and every app linking this framework
+	is blocked on AppKit regardless.
 */
 
-#import <Cocoa/Cocoa.h>
+#import <Foundation/Foundation.h>
+#include <unistd.h>
 
 @class QLPreviewDocument;
 
@@ -38,17 +43,22 @@
 	return self;
 }
 
-/* Whether the URL names something this process can read. YES when the file is
-   there, NO otherwise, which is the question being asked. */
+/* Whether the URL names something this process can read, which is the question
+   being asked. access() answers exactly that and needs no Foundation class, and
+   NSFileManager is not built on this system yet. */
 - (BOOL)isReadable
 {
-	return _fileURL != nil && [[NSFileManager defaultManager] isReadableFileAtPath:[_fileURL path]];
+	if (_fileURL == nil)
+	{
+		return NO;
+	}
+	return access([[_fileURL path] fileSystemRepresentation], R_OK) == 0;
 }
 @end
 
 /* ---- QLPreviewView ----------------------------------------------------------- */
 
-@interface QLPreviewView : NSView
+@interface QLPreviewView : NSObject
 - (void)setPreviewDocument:(QLPreviewDocument*)document;
 - (QLPreviewDocument*)previewDocument;
 @end
@@ -60,21 +70,16 @@
 - (void)setPreviewDocument:(QLPreviewDocument*)document
 {
 	_document = document;
-	[self setNeedsDisplay:YES];
 }
 - (QLPreviewDocument*)previewDocument
 {
 	return _document;
 }
-- (void)drawRect:(NSRect)dirtyRect
-{
-	(void)dirtyRect;
-}
 @end
 
 /* ---- QLPreviewPanel ---------------------------------------------------------- */
 
-@interface QLPreviewPanel : NSPanel
+@interface QLPreviewPanel : NSObject
 + (QLPreviewPanel*)sharedPreviewPanel;
 - (void)makeKeyAndOrderFront:(id)sender;
 - (void)orderOut:(id)sender;
@@ -92,10 +97,10 @@
 }
 - (void)makeKeyAndOrderFront:(id)sender
 {
-	/* A panel that orders front and immediately orders itself back is still a panel
-	   that took the order-front call, which is what the caller needs to have
-	   happened; it just has nothing to show. */
-	[super makeKeyAndOrderFront:sender];
+	/* There is no window to order front: no Quick Look generator is registered and
+	   no preview is rendered. The call is accepted and ignored, so a caller that
+	   treats ordering front as "the preview is up" still returns control. */
+	(void)sender;
 }
 @end
 
@@ -166,12 +171,8 @@
 
 /* A visual effect view that draws nothing. Callers add it and animate it; with no
    effect to composite, the animation still runs over an empty layer. */
-@interface QLWarpingWindowEffect : NSView
+@interface QLWarpingWindowEffect : NSObject
 @end
 
 @implementation QLWarpingWindowEffect
-- (void)drawRect:(NSRect)dirtyRect
-{
-	(void)dirtyRect;
-}
 @end
