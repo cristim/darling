@@ -18,6 +18,7 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "threads.h"
+#include "thread_startup_sigmask.h"
 #include <pthread.h>
 #include <sys/mman.h>
 #include <semaphore.h>
@@ -193,6 +194,24 @@ void* __darling_thread_create(unsigned long stack_size, unsigned long pth_obj_si
 	//pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
 	args.pth = pth;
+
+	// Close the window between the clone and the start of darling_thread_entry,
+	// where the new thread runs with the creating thread's mask and a signal
+	// handler could still issue a dserver RPC. Setting the mask on the attribute
+	// makes the kernel apply it before the child's first instruction. The child
+	// keeps blocking the same set itself, so a platform without the attribute
+	// still gets the guard one step later.
+#ifdef __GLIBC__
+	// The non-portable spelling; POSIX has no pthread_attr_sigmask.
+	sigset_t startup_mask;
+	darling_thread_startup_sigmask(&startup_mask);
+	int attr_sigmask_error = pthread_attr_setsigmask_np(&attr, &startup_mask);
+	if (attr_sigmask_error != 0) {
+		fprintf(stderr, "pthread_attr_setsigmask_np failed: %s\n", strerror(attr_sigmask_error));
+		abort();
+	}
+#endif
+
 	pthread_create(&nativeLibcThread, &attr, darling_thread_entry, &args);
 	pthread_attr_destroy(&attr);
 
@@ -208,12 +227,13 @@ static void* darling_thread_entry(void* p)
 	struct arg_struct args;
 
 	// Keep signal handlers off this thread until its per-thread RPC socket
-	// exists. Both signal entry paths issue a dserver RPC, which aborts when
-	// t_server_socket is still unset.
-	sigset_t all_signals;
+	// exists, and keep blocking them across the setup RPC below. The set matches
+	// the one the creating thread put on the attribute, so the mask is the same
+	// whether or not the platform applied it before the first instruction.
 	sigset_t old_signals;
-	sigfillset(&all_signals);
-	int sigmask_error = pthread_sigmask(SIG_BLOCK, &all_signals, &old_signals);
+	sigset_t blocked_signals;
+	darling_thread_startup_sigmask(&blocked_signals);
+	int sigmask_error = pthread_sigmask(SIG_BLOCK, &blocked_signals, &old_signals);
 	if (sigmask_error != 0) {
 		fprintf(stderr, "pthread_sigmask(SIG_BLOCK) failed: %s\n", strerror(sigmask_error));
 		abort();
@@ -266,8 +286,10 @@ static void* darling_thread_entry(void* p)
 		return NULL;
 	}
 
-	// Restore the inherited mask before the register variables below, whose
-	// values must not be clobbered by function calls.
+	// Restore the mask this thread was created with before the register variables
+	// below, whose values must not be clobbered by function calls. This is the
+	// creating thread's mask, not the startup set, so a thread that was itself
+	// created under one keeps inheriting it.
 	sigmask_error = pthread_sigmask(SIG_SETMASK, &old_signals, NULL);
 	if (sigmask_error != 0) {
 		fprintf(stderr, "pthread_sigmask(SIG_SETMASK) failed: %s\n", strerror(sigmask_error));
