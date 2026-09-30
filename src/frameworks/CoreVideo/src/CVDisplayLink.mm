@@ -10,6 +10,9 @@
 #import <Foundation/NSValue.h>
 #include <CoreGraphics/CGWindow.h>
 #include <CoreGraphics/CGDirectDisplay.h>
+// -[CGWindow cglContext] is declared in CGWindowPrivate.h. Without it the compiler falls back to
+// assuming an id return, and assigning that to the CGLContextObj (a struct pointer) below fails.
+#include <CoreGraphics/CGWindowPrivate.h>
 
 static const NSString* kDirectDisplayArray = @"CGDirectDisplay";
 
