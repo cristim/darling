@@ -27,6 +27,10 @@ static void xtrace_thread_exit_hook(void);
 static void xtrace_execve_inject_hook(const char*** envp_ptr);
 static void xtrace_postfork_child_hook(void);
 
+// `struct hook` is overlaid on padding that libsystem_kernel reserves in its syscall stubs (the
+// `_darling_*` symbols below). It is `packed`, so `sizeof` is exactly the number of bytes
+// setup_hook() writes there, and the reserve has to be at least that size: widening a field, or
+// dropping `packed`, silently writes over the instruction after the hook.
 #ifdef __x86_64__
 struct hook {
 	uint8_t movabs[2];
