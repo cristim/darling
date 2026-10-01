@@ -102,7 +102,7 @@ pipeline {
 				CCACHE_BASEDIR = '/home/ci/rpmbuild/BUILD/darling'
 			}
 			steps {
-				sh 'bash -xv /src/rpm/build.bsh'
+				sh 'sh -xv /src/rpm/build.sh'
 
 				sh 'rm -rf out-rpm'
 				sh 'mkdir out-rpm'
