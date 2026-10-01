@@ -174,7 +174,7 @@ static void setup_hook(struct hook* hook, void* fnptr, bool jump)
 	hook->call[0] = 0xff;
 	hook->call[1] = jump ? 0xe1 : 0xd1;
 #else
-#error "Missing hook implementation for arch
+#error "Missing hook implementation for arch"
 #endif
 }
 
