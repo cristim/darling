@@ -35,3 +35,8 @@ git clone --recursive https://github.com/darlinghq/darling.git
 cd darling
 docker build -f ci/Darling.Dockerfile -t darling .
 ```
+
+`src/external/swift` keeps its overlay dylibs in git-lfs. `git clone
+--recursive` does not fetch them, and the Dockerfile pulls them itself, but a
+direct cmake build needs `git -C src/external/swift lfs pull` first or
+`/usr/lib/swift` ends up holding pointer files.
