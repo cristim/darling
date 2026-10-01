@@ -16,6 +16,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          # The Dockerfile COPYs the whole tree, .git included, so a persisted
+          # GITHUB_TOKEN would be baked into a publicly pushed image.
+          persist-credentials: false
 
       - name: Extract metadata
         id: meta
