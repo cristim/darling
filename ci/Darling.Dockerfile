@@ -7,8 +7,7 @@
 # Without it, `darling shell` will fail with "Failed to open /dev/mach" =[.
 #
 # Usage:
-#   docker run --rm --privileged --cap-add=SYS_ADMIN \
-#     -v /dev/dxg:/dev/dxg \
+#   docker run --rm --privileged \
 #     darlinghq/darling darling shell echo "Hello from macOS runtime"
 
 FROM ubuntu:22.04
@@ -17,10 +16,11 @@ LABEL maintainer="Darling Project <https://darlinghq.org>" \
       description="Darling - macOS runtime environment for Linux" \
       url="https://github.com/darlinghq/darling"
 
+# Install build dependencies. The list tracks debian/control's Build-Depends,
+# which is the authoritative statement of what this superproject needs to build;
+# ci/Debian.Dockerfile is the same list as an image.
 ARG DEBIAN_FRONTEND=noninteractive
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     clang \
     bison \
@@ -60,6 +60,7 @@ RUN apt-get update && apt-get install -y \
     libc++-dev \
     libc++abi-dev \
     libcap2-bin \
+    libcap-dev \
     python3 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -70,12 +71,29 @@ COPY . .
 RUN git submodule update --init --recursive --no-fetch 2>/dev/null || \
     git submodule update --init --recursive
 
+# src/external/swift ships its overlay dylibs and frameworks through git-lfs
+# (darling-swift's .gitattributes marks *.dylib and the Combine/CryptoKit/... trees
+# `filter=lfs`), and its CMakeLists.txt installs whatever `file(GLOB "*.dylib")`
+# finds. Without a pull those are 130-byte pointer files that still match the glob,
+# so the build succeeds and the installed /usr/lib/swift is text. Same step as
+# ci/Jenkinsfile:46.
+RUN git -C src/external/swift lfs install --local && \
+    git -C src/external/swift lfs pull
+
 # Build and install
 #
 # Key cmake flags:
-# - CMAKE_C_FLAGS_INIT: Appended to internal flags. Using CMAKE_C_FLAGS would 
-#   overwrite required warning suppressions like -Wno-nullability-completeness.
-# - TARGET_i386=OFF: Skip 32-bit slices to avoid noisy linker failures and ranlib warnings.
+# - CMAKE_C_FLAGS_INIT / CMAKE_CXX_FLAGS_INIT: appended to CMake's internal flags.
+#   CMAKE_C_FLAGS would replace them, and CMakeLists.txt:136-137 appends the
+#   IGNORED_WARNINGS set (which carries -Wno-nullability-completeness,
+#   -Wno-deprecated-declarations and -Wno-availability) on top of whatever it is
+#   given, so the suppression survives either way. Kept as *_INIT because the
+#   vendored Apple dylib cross-compilation needs those warnings off and the
+#   ignoring must not depend on flag ordering.
+# - TARGET_i386=OFF: skip the 32-bit slices. The Debian package builds them
+#   (CMakeLists.txt:162), so this image is x86_64-only; the ranlib "no symbols"
+#   noise and the i386 linker failures they drag in are not worth a guest
+#   capability the runtime image cannot use on an arm64 host anyway.
 RUN mkdir -p build && cd build && \
     cmake .. \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -84,11 +102,9 @@ RUN mkdir -p build && cd build && \
         -DCMAKE_C_FLAGS_INIT="-Wno-incompatible-pointer-types" \
         -DCMAKE_CXX_FLAGS_INIT="-Wno-incompatible-pointer-types" \
         -DTARGET_i386=OFF \
-        -DDARLING_NO_DSYM=ON \
         -GNinja && \
     ninja -j$(nproc) && \
     ninja install && \
-
     cd / && rm -rf /src/darling/build
 
 WORKDIR /root
