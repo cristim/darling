@@ -8,12 +8,19 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# Read-only, and nothing more: the job clones with actions/checkout and
+# authenticates to Docker Hub with DOCKERHUB_USERNAME/DOCKERHUB_TOKEN. The
+# GHA build cache rides on the Actions cache service, not on a token scope, so
+# no write permission is needed for cache export either.
+permissions:
+  contents: read
+
 jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Darling
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
           # The Dockerfile COPYs the whole tree, .git included, so a persisted
@@ -22,7 +29,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: darlinghq/darling
           tags: |
@@ -32,16 +39,16 @@ jobs:
             type=sha,prefix=git-
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
           file: ci/Darling.Dockerfile
@@ -52,7 +59,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@432a30c9e07499fd01da9f8a49f0faf9e0ca5b77 # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
