@@ -17,19 +17,8 @@
  along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <Foundation/Foundation.h>
 
-/* Stub. As of 2026-09-20, these binaries link MediaLibrary but bind no symbol from it, so an
-   exporting stub is unnecessary:
-     Music.app
-   A strong bind to a symbol this framework does not export still aborts in dyld, which is
-   the intended loud failure. Re-run tools/darling-tier1-stub-gen after an OS update to
-   check that this still holds. */
+@interface MLMediaLibraryImpl : NSObject
 
-__attribute__((constructor))
-static void MediaLibrary_stub_loaded(void)
-{
-	if (getenv("STUB_VERBOSE"))
-		fprintf(stderr, "STUB: MediaLibrary loaded (no symbols implemented)\n");
-}
+@end
