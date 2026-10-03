@@ -56,11 +56,13 @@ void test_pwritev_preadv_basic(void)
 	assert(strcmp(r2, buf2) == 0);
 	assert(strcmp(r3, buf3) == 0);
 
-	// Test 4: direct syscall test (SYS_preadv = 540, SYS_pwritev = 541)
+	// Test 4: the raw syscall path, which is what Nanobrew tripped over in
+	// darlinghq/darling#1768 ("Unimplemented syscall (540)"). SYS_preadv comes
+	// from <sys/syscall.h>, generated from xnu's bsd/kern/syscalls.master.
 	memset(r1, 0, sizeof(r1));
 	memset(r2, 0, sizeof(r2));
 	memset(r3, 0, sizeof(r3));
-	long sys_nr = syscall(540, fd, iov_read, 3, (off_t)strlen(hdr));
+	long sys_nr = syscall(SYS_preadv, fd, iov_read, 3, (off_t)strlen(hdr));
 	assert(sys_nr == (long)total_write);
 	assert(strcmp(r1, buf1) == 0);
 	assert(strcmp(r2, buf2) == 0);
@@ -73,6 +75,8 @@ void test_pwritev_preadv_basic(void)
 int main(void)
 {
 	test_pwritev_preadv_basic();
+	// assert() is compiled out under NDEBUG, so the pass message below is not
+	// by itself evidence that anything was checked.
 	printf("preadv_pwritev tests passed successfully!\n");
 	return 0;
 }
