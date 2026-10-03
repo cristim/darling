@@ -1,0 +1,8 @@
+build/
+build-*/
+.debbuild/
+debian/tmp/
+debian/.debhelper/
+*.deb
+*.dsc
+*.rpm
