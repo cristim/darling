@@ -154,3 +154,28 @@ the existing value with the family name glued on, so it is the only one of the t
 positive reason to prefer it. That is still a consistency argument about this tree rather than
 evidence about Apple's value, and the same PR gets the other 19 wrong. Settle it by observation
 before changing it: one guest program reading each constant out of an installed VideoToolbox.
+## Carbon event loop
+
+### RunApplicationEventLoop is still an immediate-return stub
+- `src/frameworks/Carbon/src/Carbon.c:150` returns at once. A guest calling it
+  resumes on the next line instead of entering an event loop.
+- Upstream PR #1780 (draft, `Lazerbeak12345`) replaces the stub with a blocking
+  `CFRunLoopRun()` in `src/frameworks/Carbon/HIToolbox/src/CarbonEvents.c`, and
+  was held back rather than integrated: its only commit is titled
+  `DO NOT MERGE! feat: implement Carbon EventLoop`, and of the seven functions it
+  declares in `CarbonEventsCore.h` four (`GetCurrentEventLoop`,
+  `RunCurrentEventLoop`, `QuitEventLoop`, `QuitApplicationEventLoop`) have no
+  definition, only commented-out bodies. A declaration with no definition in a
+  shipped dylib is a latent link failure for any guest that calls it.
+- Landing the blocking version without a way to stop it would be worse than the
+  stub. On the main thread `CFRunLoopRun` does block indefinitely, not return:
+  `__CFRunLoopModeIsEmpty` treats the main loop's default mode as non-empty
+  because it is a member of `commonModes` (`corefoundation/CFRunLoop.c:837`, and
+  the default mode is seeded into `commonModes` at `CFRunLoop.c:1334`), so the
+  early return for an empty mode at `CFRunLoop.c:2664` is not taken and
+  `__CFRunLoopRun` waits on the port set with an infinite timeout. With
+  `QuitApplicationEventLoop` and `QuitEventLoop` unimplemented, nothing can call
+  `CFRunLoopStop`, so a guest reaching `RunApplicationEventLoop` would hang
+  forever instead of returning. That also affects
+  `python/2.7/.../carbonevt/_CarbonEvtmodule.c:1860`, which calls it from
+  `CarbonEvents.RunApplicationEventLoop()`.
