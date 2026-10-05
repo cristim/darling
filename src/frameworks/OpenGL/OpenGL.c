@@ -50,6 +50,9 @@ struct _CGLContextObj {
     pthread_mutex_t lock;
     EGLContext egl_context;
     EGLSurface egl_surface;
+    // Config this context was created with. eglMakeCurrent requires the drawable's
+    // config to be compatible with the context's, so CGLGetWindow needs to know it.
+    EGLConfig egl_config;
     // EGL has no function for getting the current swap interval,
     // so we need to save the last set value. The default is 1.
     int swap_interval;
@@ -58,6 +61,10 @@ struct _CGLContextObj {
 struct _CGLPixelFormatObj {
     GLuint retain_count;
     CGLPixelFormatAttribute *attributes;
+    // The EGLConfig matching `attributes`. Kept on the format rather than only in the
+    // process-global `config` so a window surface can be created with the same config
+    // its context was created from; EGL requires the two to be compatible.
+    EGLConfig egl_config;
 };
 
 static inline int attribute_has_argument(CGLPixelFormatAttribute attr) {
@@ -90,6 +97,60 @@ static int attributes_count(const CGLPixelFormatAttribute *attrs) {
         }
     }
     return result;
+}
+
+// Translate a CGLPixelFormatAttribute list into EGL config attributes. Unrecognised
+// attributes are skipped rather than guessed at, and the result is advisory: a
+// pixel format that cannot be satisfied still yields a usable config, which is what
+// the previous stub did for every request. The point is that requests which *can* be
+// satisfied - buffer count, colour/depth/stencil sizes, samples - now actually reach EGL
+// instead of being discarded.
+static int cgl_attributes_to_egl(const CGLPixelFormatAttribute *attrs, EGLint *out, int max) {
+    int n = 0;
+    // Always require an OpenGL-capable config. Without this the query can return a config with no
+    // OpenGL support, and eglCreateContext then fails for reasons unrelated to the caller's request.
+    if (n + 2 <= max) {
+        out[n++] = EGL_RENDERABLE_TYPE; out[n++] = EGL_OPENGL_BIT;
+    }
+    for (int i = 0; attrs[i] != 0 && n + 2 <= max; i++) {
+        CGLPixelFormatAttribute a = attrs[i];
+        int value = 0;
+        if (attribute_has_argument(a)) value = attrs[++i];
+
+        switch (a) {
+        case kCGLPFADoubleBuffer:
+            out[n++] = EGL_RENDER_BUFFER; out[n++] = EGL_BACK_BUFFER;
+            break;
+        case kCGLPFAColorSize:
+            out[n++] = EGL_RED_SIZE; out[n++] = value;
+            out[n++] = EGL_GREEN_SIZE; out[n++] = value;
+            out[n++] = EGL_BLUE_SIZE; out[n++] = value;
+            break;
+        case kCGLPFAAlphaSize:
+            out[n++] = EGL_ALPHA_SIZE; out[n++] = value;
+            break;
+        case kCGLPFADepthSize:
+            out[n++] = EGL_DEPTH_SIZE; out[n++] = value;
+            break;
+        case kCGLPFAStencilSize:
+            out[n++] = EGL_STENCIL_SIZE; out[n++] = value;
+            break;
+        case kCGLPFASamples:
+        case kCGLPFAMultisample:
+            if (a == kCGLPFAMultisample && value == 0) break;
+            out[n++] = EGL_SAMPLES; out[n++] = value > 0 ? value : 1;
+            break;
+        case kCGLPFAAuxBuffers:
+            // No core EGL attribute for aux buffers; ignored deliberately.
+            break;
+        case kCGLPFAColorFloat:
+            if (value) { out[n++] = EGL_RENDERABLE_TYPE; out[n++] = EGL_OPENGL_BIT; }
+            break;
+        default:
+            break;
+        }
+    }
+    return n;
 }
 
 CGLError CGLRegisterNativeDisplay(void *native_display) {
@@ -230,9 +291,26 @@ CGLError CGLSetSurface(CGLContextObj gl, CGSConnectionID cid, CGSWindowID wid, C
 CGLWindowRef CGLGetWindow(void *native_window) {
 
     EGLNativeWindowType window = (EGLNativeWindowType) native_window;
-    EGLSurface surface = eglCreateWindowSurface(display, config, window, NULL);
+    // Prefer the current context's config: eglMakeCurrent fails with EGL_BAD_MATCH if the
+    // drawable's config differs from the context's, so the surface has to be created with
+    // whichever config the context was actually built from. Fall back to the process-global
+    // config when no context is current, which is the previous behaviour.
+    EGLConfig surface_config = config;
+    CGLContextObj current = CGLGetCurrentContext();
+    if (current != NULL && current->egl_config != NULL) {
+        surface_config = current->egl_config;
+    }
+    EGLSurface surface = eglCreateWindowSurface(display, surface_config, window, NULL);
 
     if (surface == EGL_NO_SURFACE) {
+        // Callers only see a NULL drawable, which they report as
+        // kCGLBadDrawable without saying why, so "EGL refused this window" and
+        // "no window handle was passed" look identical from outside. Report the
+        // EGL reason once rather than on every attempt.
+        static int reported;
+        if (!__sync_lock_test_and_set(&reported, 1))
+            fprintf(stderr, "CGLGetWindow: eglCreateWindowSurface failed for "
+                    "window %p, eglGetError 0x%x\n", native_window, eglGetError());
         return NULL;
     }
 
@@ -278,6 +356,21 @@ CGLError CGLSetCurrentContext(CGLContextObj context) {
         EGLSurface surface = context->egl_surface;
         if (!eglMakeCurrent(display, surface, surface, context->egl_context))
             return kCGLBadContext;
+        // A context can only be made current on a drawable built from the same config; eglMakeCurrent
+        // rejects a mismatch with EGL_BAD_MATCH. The CGL entry points give callers no way to see which
+        // config anything resolved to, so report the first mismatch here, after the make-current,
+        // which is the point where both handles are known usable.
+        if (surface != EGL_NO_SURFACE) {
+            static int reported;
+            EGLint ctx_id = -1, surf_id = -1;
+            if (!__sync_lock_test_and_set(&reported, 1) &&
+                eglQueryContext(display, context->egl_context, EGL_CONFIG_ID, &ctx_id) &&
+                eglQuerySurface(display, surface, EGL_CONFIG_ID, &surf_id) &&
+                ctx_id != surf_id) {
+                fprintf(stderr, "CGL: drawable config %d differs from context config %d\n",
+                        surf_id, ctx_id);
+            }
+        }
         pthread_setspecific(get_current_context_key(), context);
         if (surface != EGL_NO_SURFACE && !eglSwapInterval(display, context->swap_interval))
             return kCGLBadValue;
@@ -348,10 +441,32 @@ CGLError CGLChoosePixelFormat(
     CGLPixelFormatObj format = malloc(sizeof(struct _CGLPixelFormatObj));
     int count = attributes_count(attrs);
 
+    format->egl_config = NULL;
     format->retain_count = 1;
     format->attributes = malloc(sizeof(CGLPixelFormatAttribute) * count);
     for (int i = 0; i < count; i++) {
         format->attributes[i] = attrs[i];
+    }
+
+    // Resolve the request against the current display. Fall back to the process-global
+    // config when nothing matches, so an unsatisfiable request degrades to the old
+    // behaviour instead of failing to produce a drawable at all.
+    if (display != EGL_NO_DISPLAY && display != NULL) {
+        EGLint egl_attrs[64];
+        int n = cgl_attributes_to_egl(format->attributes, egl_attrs, 64);
+        EGLint found = 0;
+        if (n > 0 && eglChooseConfig(display, egl_attrs, NULL, 0, &found) && found > 0) {
+            EGLConfig *configs = calloc((size_t)found, sizeof(*configs));
+            if (configs != NULL) {
+                if (eglChooseConfig(display, egl_attrs, configs, found, &found)) {
+                    format->egl_config = configs[0];
+                }
+                free(configs);
+            }
+        }
+    }
+    if (format->egl_config == NULL) {
+        format->egl_config = config;
     }
 
     *result = format;
@@ -440,7 +555,12 @@ CGLError CGLCreateContext(CGLPixelFormatObj pixelFormat, CGLContextObj share, CG
     if (share != NULL) {
         egl_share = share->egl_context;
     }
-    EGLContext egl_context = eglCreateContext(display, config, egl_share, NULL);
+    // Honour the format the caller actually asked for. This used to always use the
+    // process-global config, which made every app's pixel-format attributes dead letters.
+    EGLConfig context_config = pixelFormat != NULL && pixelFormat->egl_config != NULL
+        ? pixelFormat->egl_config
+        : config;
+    EGLContext egl_context = eglCreateContext(display, context_config, egl_share, NULL);
 
     if (egl_context == EGL_NO_CONTEXT) {
         return kCGLBadContext;
@@ -457,6 +577,7 @@ CGLError CGLCreateContext(CGLPixelFormatObj pixelFormat, CGLContextObj share, CG
     pthread_mutex_init(&(context->lock), NULL);
     context->egl_context = egl_context;
     context->egl_surface = NULL;
+    context->egl_config = context_config;
     context->swap_interval = default_swap_interval;
 
     *resultp = context;
