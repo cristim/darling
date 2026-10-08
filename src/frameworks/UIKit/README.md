@@ -40,3 +40,13 @@ compiles one test and one framework serially, saves exact commands, and neither
 installs artifacts nor configures the shared build. Run the resulting harness
 through Darling in a fresh sanitized prefix, first with no argument (expected
 failure), then with the UIKit path (expected success).
+
+`NSStringFromCGSize` delegates geometry formatting to Foundation, reusing the BSD
+Chameleon wrapper (84605ede274bd82b330d72dd6ac41e64eb925fd7, UIGeometry.m). The complete
+notice and license are retained. Specification is rung 3, Apple's public
+[NSStringFromCGSize](https://developer.apple.com/documentation/uikit/nsstringfromcgsize)
+and [CGSizeFromString](https://developer.apple.com/documentation/uikit/cgsizefromstring)
+documentation: width and height in an unlocalized comma-separated brace pair.
+Pass `--test-source src/frameworks/UIKit/tests/geometry.m` to build the focused
+`geometry` regression; it fails against the layout-only framework before this change.
+Existing Foundation geometry boxing categories are reused without duplication.
