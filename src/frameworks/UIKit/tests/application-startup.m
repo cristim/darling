@@ -64,6 +64,22 @@ static int willCount, didCount;
 }
 @end
 
+static int savedArgc;
+static char **savedArgv;
+static NSString *savedDelegate;
+
+@interface Helper : NSObject
+@end
+@implementation Helper
+- (void)offMain { UIApplicationMain(savedArgc, savedArgv, nil, savedDelegate); }
+- (void)nilFire:(NSTimer *)t
+{
+    fprintf(stderr, "nil-delegate shared=%d delegate-nil=%d\n", [UIApplication sharedApplication] != nil,
+            [UIApplication sharedApplication].delegate == nil);
+    [NSApp terminate:nil];
+}
+@end
+
 int main(int argc, char **argv)
 {
     @autoreleasepool {
@@ -75,18 +91,17 @@ int main(int argc, char **argv)
         if (!strcmp(mode, "missing-delegate")) delegate = @"NoSuchClass";
         if (!strcmp(mode, "custom-principal")) principal = @"FixtureApplication";
         if (!strcmp(mode, "nil-delegate")) delegate = nil;
+        savedArgc = argc;
+        savedArgv = argv;
+        savedDelegate = delegate;
+        Helper *helper = [[Helper alloc] init];
         if (!strcmp(mode, "off-main")) {
-            NSThread *t = [[NSThread alloc] initWithBlock:^{ UIApplicationMain(argc, argv, nil, delegate); }];
-            [t start];
+            [NSThread detachNewThreadSelector:@selector(offMain) toTarget:helper withObject:nil];
             [NSThread sleepForTimeInterval:5];
             return 0;
         }
         if (!strcmp(mode, "nil-delegate")) {
-            [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:NO block:^(NSTimer *t) {
-                fprintf(stderr, "nil-delegate shared=%d delegate-nil=%d\n", [UIApplication sharedApplication] != nil,
-                        [UIApplication sharedApplication].delegate == nil);
-                [NSApp terminate:nil];
-            }];
+            [NSTimer scheduledTimerWithTimeInterval:0.2 target:helper selector:@selector(nilFire:) userInfo:nil repeats:NO];
         }
         return UIApplicationMain(argc, argv, principal, delegate);
     }
