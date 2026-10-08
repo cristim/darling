@@ -1,59 +1,38 @@
-# Bounded public UIResponder chain regression
+# UIResponder chain regression
 
-This component implements an NSObject-based UIResponder with four public methods:
-nextResponder, canBecomeFirstResponder, canResignFirstResponder and
-canPerformAction:withSender:. It does not establish first-responder ownership,
-window attachment, action dispatch or a UIKit application/window chain.
+Covers the four public UIResponder methods implemented in `src/UIResponder.m`:
+`nextResponder`, `canBecomeFirstResponder`, `canResignFirstResponder` and
+`canPerformAction:withSender:`. First-responder ownership, window attachment and
+action dispatch are not implemented: they need UIWindow/UIView/scene ownership
+that does not exist yet.
 
-Provenance: licensed BSD Chameleon84605ede274bd82b330d72dd6ac41e64eb925fd7
-UIKit/Classes/UIResponder.h/.m supplies the reused functional subset, with full
-notices retained. Apple public documentation (clean-room rung 3) specifies:
+## Provenance
 
-- [next responder](https://developer.apple.com/documentation/uikit/uiresponder/next?language=objc): base returns nil and does not set/store the chain; subclasses override.
-- [becoming eligible](https://developer.apple.com/documentation/uikit/uiresponder/canbecomefirstresponder): default NO, also specified by becomeFirstResponder documentation.
-- [resignation eligibility](https://developer.apple.com/documentation/uikit/uiresponder/canresignfirstresponder): default YES.
-- [action validation](https://developer.apple.com/documentation/uikit/uiresponder/canperformaction(_:withsender:)): default enables actions implemented by the responder class, otherwise asks the next responder.
+- Specification, clean-room rung 3 (Apple public documentation):
+  - [nextResponder](https://developer.apple.com/documentation/uikit/uiresponder/next?language=objc): base returns nil
+  - [canBecomeFirstResponder](https://developer.apple.com/documentation/uikit/uiresponder/canbecomefirstresponder): default NO
+  - [canResignFirstResponder](https://developer.apple.com/documentation/uikit/uiresponder/canresignfirstresponder): default YES
+  - [canPerformAction:withSender:](https://developer.apple.com/documentation/uikit/uiresponder/canperformaction(_:withsender:)): YES for actions the responder class implements, otherwise ask the next responder
+- Source: the BSD-licensed Chameleon project (https://github.com/BigZaphod/Chameleon)
+  at 84605ede274bd82b330d72dd6ac41e64eb925fd7, `UIKit/Classes/UIResponder.h/.m`, with
+  its notices retained. This is reused open-source code, not a ladder rung.
 
-Authored dynamic subclasses use public Objective-C runtime APIs so the same
-executable can test a baseline UIKit without statically linking its missing
-UIResponder class. The test defines its own nextResponder chain and action method;
-these are synthetic inputs, not fabricated UIKit hierarchy. BOOL runtime method
-encodings come from @encode(BOOL), not a guessed architecture encoding.
+## What is checked
 
-Checks: base defaults, subclass chain links, inherited action detection, nil
-termination for unhandled commands, sender/selector preservation across multiple
-nodes, state-dependent override validation and eligibility overrides. Validation
-must not execute the action. Chain mutation is in the authored subclass only;
-UIResponder gains no automatic nextResponder setter/storage.
+The test builds its own responder subclasses with the Objective-C runtime, so one
+executable runs against a UIKit without `UIResponder` (expected: exit 1) and
+against one with it (expected: exit 0). It checks the defaults, subclass chain
+links, inherited action detection, nil termination, sender and selector
+preservation across nodes, and eligibility overrides. Validation never executes
+the action.
 
-Run the executable with an explicit dlopen artifact argument in an offscreen
-synthetic guest (it does not initialize NSApplication or interpret documents):
+## Build and run
 
 ```
-darling shell /Volumes/SystemRoot/<responder-chain> /Volumes/SystemRoot/<UIKit-artifact>
+python3 build-responder-chain.py --source-root <repo> --runtime-root <runtime>/libexec/darling \
+  --build-dir <out> --linker <darwin ld64>
+darling shell <out>/responder-chain <out>/UIKitResponder
 ```
 
-Compile with pinned Foundation/Objective-C headers and Darwin linker/runtime
-mapping using the focused UIKit harness recipe. All compilation is serial under
-shared heavy-build flock and defers to full-runtime priority. Use a fresh private
-prefix, bootstrap shell true, replace host-home symlinks with empty directories,
-and shut down only that prefix. No history/account/service calls are needed.
-
-Prove missing UIResponder against a clean baseline first, then run the identical
-executable against the implementation. Build and re-run reviewed clean committed
-source before integration. Keep binary, commands/dependencies/hashes and guest
-logs in private scratch; no compiled output or symbol dumps enter source control.
-
-First-responder query/transitions are deliberately not declared or implemented:
-UIWindow/UIView/scene ownership and active hierarchy are not available. AppKit's
-NSWindow.makeFirstResponder calls NSResponder become/resign callbacks; UIKit's
-becomeFirstResponder is a request to UIKit. UIResponder inherits NSObject, so
-simply substituting NSResponder or passing it as an AppKit first responder would
-invent the attachment/ownership contract. No global focus default is supplied.
-
-Target lookup and dispatch are a separate integration concern. canPerformAction
-can delegate validation upward; targetForAction documentation says it uses that
-validation and returns itself when enabled. An invocable target/forwarding route
-for a receiver without the action needs coherent UIApplication integration,
-not an invented forwardingTargetForSelector/methodSignature chain. No
-UIApplication.sendAction or targetForAction is claimed by this component.
+Run it in a fresh private prefix with the host-home symlinks replaced by empty
+directories. The second argument is the UIKit artifact the test `dlopen`s.
