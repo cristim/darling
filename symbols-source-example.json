@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "architecture": "arm64",
+  "sources": [
+    {
+      "path": "/home/cristi/tmp-opencode/darling-unfinished-20261008-symbols-source",
+      "commit": "d69b8ca6742a719ddf25b84ebf676d99af339203"
+    }
+  ],
+  "targets": [
+    {
+      "name": "Symbols-source",
+      "argv": [
+        "/home/cristi/src/swift-darling/toolchain-linux/swift-6.3.3-RELEASE-ubuntu24.04-aarch64/usr/bin/swiftc",
+        "-emit-object",
+        "-emit-module",
+        "-whole-module-optimization",
+        "-parse-as-library",
+        "-enable-library-evolution",
+        "-swift-version",
+        "5",
+        "-target",
+        "arm64-apple-macosx26.0",
+        "-sdk",
+        "/home/cristi/tmp-opencode/az120-swiftui-inputs/MacOSX.sdk",
+        "-resource-dir",
+        "/home/cristi/src/swift-darling/osx-6.3.3/payload/usr/lib/swift",
+        "-module-cache-path",
+        "{workspace}/cache",
+        "-I",
+        "/home/cristi/tmp-opencode/az120-swift-overlays-source/overlays/build/modules",
+        "-I",
+        "/home/cristi/tmp-opencode/az120-swiftui-inputs/dependency-build/modules",
+        "-I",
+        "/home/cristi/tmp-opencode/az120-swiftui-inputs/diagnostic-modules",
+        "-F",
+        "/home/cristi/tmp-opencode/az120-swiftui-inputs/MacOSX.sdk/System/Library/Frameworks/CoreServices.framework/Frameworks",
+        "-DSWIFT_PACKAGE",
+        "-Onone",
+        "-module-name",
+        "Symbols",
+        "-emit-module-path",
+        "{workspace}/modules/Symbols.swiftmodule",
+        "-o",
+        "{workspace}/objects/Symbols.o",
+        "/home/cristi/tmp-opencode/az120-swiftui-inputs/Symbols-candidate.swift"
+      ],
+      "env": {
+        "LD_LIBRARY_PATH": "/home/cristi/src/swift-darling/toolchain-linux/compat-lib",
+        "SWIFT_BACKTRACE": "enable=no"
+      },
+      "inputs": [
+        "/home/cristi/tmp-opencode/az120-swiftui-inputs/Symbols-candidate.swift"
+      ],
+      "outputs": [
+        "{workspace}/objects/Symbols.o",
+        "{workspace}/modules/Symbols.swiftmodule"
+      ]
+    }
+  ]
+}
