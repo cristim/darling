@@ -9,8 +9,6 @@ NS_ASSUME_NONNULL_BEGIN
 typedef NSString *UISceneSessionRole NS_TYPED_EXTENSIBLE_ENUM;
 
 extern UISceneSessionRole const UIWindowSceneSessionRoleApplication;
-extern UISceneSessionRole const UIWindowSceneSessionRoleExternalDisplayNonInteractive;
-extern UISceneSessionRole const UIWindowSceneSessionRoleAssistiveAccessApplication;
 
 @interface UISceneConfiguration : NSObject <NSCopying>
 + (instancetype)configurationWithName:(nullable NSString *)name sessionRole:(UISceneSessionRole)sessionRole;

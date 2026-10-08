@@ -2,8 +2,6 @@
 #import <Foundation/NSException.h>
 
 UISceneSessionRole const UIWindowSceneSessionRoleApplication = @"UIWindowSceneSessionRoleApplication";
-UISceneSessionRole const UIWindowSceneSessionRoleExternalDisplayNonInteractive = @"UIWindowSceneSessionRoleExternalDisplayNonInteractive";
-UISceneSessionRole const UIWindowSceneSessionRoleAssistiveAccessApplication = @"UIWindowSceneSessionRoleAssistiveAccessApplication";
 
 @implementation UISceneConfiguration {
     NSString *_name;

@@ -13,14 +13,11 @@ int main(int argc, char **argv)
         Class configClass = NSClassFromString(@"UISceneConfiguration");
         CHECK(configClass != Nil);
         void *applicationSymbol = dlsym(library, "UIWindowSceneSessionRoleApplication");
-        void *externalSymbol = dlsym(library, "UIWindowSceneSessionRoleExternalDisplayNonInteractive");
-        void *assistiveSymbol = dlsym(library, "UIWindowSceneSessionRoleAssistiveAccessApplication");
-        CHECK(applicationSymbol && externalSymbol && assistiveSymbol);
+        CHECK(applicationSymbol);
         NSString *application = *(__unsafe_unretained NSString **)applicationSymbol;
-        NSString *external = *(__unsafe_unretained NSString **)externalSymbol;
-        NSString *assistive = *(__unsafe_unretained NSString **)assistiveSymbol;
         CHECK([application isEqualToString:@"UIWindowSceneSessionRoleApplication"]);
-        CHECK(![external isEqualToString:application] && ![assistive isEqualToString:external]);
+        CHECK(dlsym(library, "UIWindowSceneSessionRoleExternalDisplayNonInteractive") == NULL);
+        CHECK(dlsym(library, "UIWindowSceneSessionRoleAssistiveAccessApplication") == NULL);
 
         NSMutableString *name = [NSMutableString stringWithString:@"Default"];
         NSMutableString *role = [NSMutableString stringWithString:application];
@@ -42,8 +39,8 @@ int main(int argc, char **argv)
         copy.delegateClass = Nil;
         CHECK(config.delegateClass == [NSString class]);
 
-        UISceneConfiguration *unnamed = [configClass configurationWithName:nil sessionRole:external];
-        CHECK(unnamed.name == nil && [unnamed.role isEqualToString:external]);
+        UISceneConfiguration *unnamed = [configClass configurationWithName:nil sessionRole:@"custom-role"];
+        CHECK(unnamed.name == nil && [unnamed.role isEqualToString:@"custom-role"]);
 
         UISceneSessionRole nilRole = nil;
         BOOL raised = NO;

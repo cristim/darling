@@ -1,7 +1,7 @@
 # UISceneConfiguration value regression
 
-Implements the name/role/sceneClass/delegateClass value object and the three
-imported window-scene session role constants. It creates no scenes, sessions,
+Implements the name/role/sceneClass/delegateClass value object and the
+documented application session role constant. It creates no scenes, sessions,
 windows or delegates; UIWindowScene and UIApplicationMain remain absent.
 
 Clean-room rung 3 specifications:
@@ -12,8 +12,10 @@ Clean-room rung 3 specifications:
   and the Info.plist UIApplicationSceneManifest documentation, which uses the
   role names as plist keys.
 
-Rung 6, local policy: the ExternalDisplayNonInteractive and
-AssistiveAccessApplication string values equal their symbol names (no public
-specification of the values found); a nil role raises NSInvalidArgumentException;
+Deliberately NOT defined: UIWindowSceneSessionRoleExternalDisplayNonInteractive and
+UIWindowSceneSessionRoleAssistiveAccessApplication. No public specification of their
+values could be fetched (DocC pages are script-rendered), and the symbol names are not
+evidence of the strings; they stay unresolved imports.
+Rung 6, local policy: a nil role raises NSInvalidArgumentException;
 the storyboard property is omitted because UIStoryboard does not exist here.
 Name and role are copied at initialization; copies duplicate all four values.
