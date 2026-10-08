@@ -62,3 +62,16 @@ raise NSInvalidArgumentException as conservative local rung 6 policy, without an
 observed Apple error contract. Use `--test-source src/frameworks/UIKit/tests/graphics-context.m`
 for nesting, AppKit/nil restoration, retained lifetime and simultaneous-thread proof.
 This implements context selection, without claiming rendering or image APIs.
+
+`NSCollectionLayoutItem` implements the documented size-only factory, size getter,
+mutable directional content insets, copied edge spacing and independent NSCopying.
+Rung 3: Apple [item](https://developer.apple.com/documentation/uikit/nscollectionlayoutitem),
+[factory](https://developer.apple.com/documentation/uikit/nscollectionlayoutitem/init(layoutsize:)),
+[insets](https://developer.apple.com/documentation/uikit/nscollectionlayoutitem/contentinsets),
+and [spacing](https://developer.apple.com/documentation/uikit/nscollectionlayoutitem/edgespacing)
+documentation, including published Objective-C declaration variants. Rung 2: the
+existing AppKit NSLayoutConstraint.h directional inset type is reused. Zero initial
+insets, nil initial spacing and finite/type rejection are conservative local rung 6
+policies; no macOS observation exists. The supplementary-item constructor, groups,
+layout calculation and rendering remain unavailable. Use `--test-source src/frameworks/UIKit/tests/layout-item.m` for retained size/spacing, directional
+values and mutation-independent copies.
