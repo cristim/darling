@@ -3,8 +3,8 @@
   "architecture": "arm64",
   "sources": [
     {
-      "path": "/home/cristi/tmp-opencode/darling-unfinished-20261008-symbols-source",
-      "commit": "d69b8ca6742a719ddf25b84ebf676d99af339203"
+      "path": "/home/cristi/tmp-opencode/az120-symbols-source",
+      "commit": "3f60f927c99dd2f9b443576780da4b3fdb8135a0"
     }
   ],
   "targets": [

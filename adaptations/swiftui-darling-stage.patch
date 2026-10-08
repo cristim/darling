@@ -1,0 +1,350 @@
+--- OpenSwiftUI/Accessibility/internal/AccessibilityBoundedNumber.swift
++++ OpenSwiftUI/Accessibility/internal/AccessibilityBoundedNumber.swift
+@@ -40,7 +40,7 @@
+     // For 1.5 and [1.3, 2.3], the accessiblity output would be 1.5
+     var localizedDescription: String? {
+         let range: Double = if let lowerBound, let upperBound {
+-            upperBound.base.doubleValue - lowerBound.base.doubleValue
++            upperBound.base.doubleValue() - lowerBound.base.doubleValue()
+         } else {
+             .zero
+         }
+@@ -48,7 +48,7 @@
+             let style: NumberFormatter.Style = (abs(range - 1.0) < .ulpOfOne) ? .percent : .decimal
+             return NumberFormatter.localizedString(from: number.base, number: style)
+         } else {
+-            return NumberFormatter.localizedString(from: NSNumber(value: number.base.doubleValue / 100), number: .percent)
++            return NumberFormatter.localizedString(from: NSNumber(value: number.base.doubleValue() / 100), number: .percent)
+         }
+     }
+ 
+--- OpenSwiftUI/App/App/AppKit/AppKitAppDelegate.swift
++++ OpenSwiftUI/App/App/AppKit/AppKitAppDelegate.swift
+@@ -88,10 +88,10 @@
+ 
+ extension Bundle {
+     fileprivate func localizedValue(for key: String) -> String? {
+-        if let localizedInfoDictionary,
++        if let localizedInfoDictionary = localizedInfoDictionary(),
+            let value = localizedInfoDictionary[key] as? String {
+             return value
+-        } else if let infoDictionary,
++        } else if let infoDictionary = infoDictionary(),
+                   let value = infoDictionary[key] as? String {
+             return value
+         } else {
+--- OpenSwiftUICore/Graphic/Color/NamedColor.swift
++++ OpenSwiftUICore/Graphic/Color/NamedColor.swift
+@@ -266,7 +266,7 @@
+ 
+ #endif
+ 
+-#if canImport(Darwin) && canImport(DeveloperToolsSupport)
++#if canImport(Darwin) && canImport(DeveloperToolsSupport) && !OPENSWIFTUI_DARLING
+ 
+ public import DeveloperToolsSupport
+ 
+--- OpenSwiftUI/Macro/PreviewMacro.swift
++++ OpenSwiftUI/Macro/PreviewMacro.swift
+@@ -19,6 +19,7 @@
+     type: "PreviewMacro"
+ )
+ 
++#if !OPENSWIFTUI_DARLING
+ /// Creates an Xcode preview with traits from an OpenSwiftUI view.
+ ///
+ /// The macro hosts the view in a platform view controller and registers it and
+@@ -35,3 +36,4 @@
+     type: "PreviewMacro"
+ )
+ #endif
++#endif
+--- OpenSwiftUI/View/Control/ProgressView/ProgressView+Foundation.swift
++++ OpenSwiftUI/View/Control/ProgressView/ProgressView+Foundation.swift
+@@ -13,6 +13,9 @@
+ import Combine
+ #endif
+ import Foundation
++#if OPENSWIFTUI_DARLING
++import CombineFoundation
++#endif
+ import OpenAttributeGraphShims
+ 
+ // MARK: - Progress + UI State
+@@ -34,7 +37,7 @@
+         )
+     }
+ 
+-    #if canImport(ObjectiveC) && !OPENSWIFTUI_OPENCOMBINE
++    #if canImport(ObjectiveC) && !OPENSWIFTUI_OPENCOMBINE && !OPENSWIFTUI_DARLING
+     // Apple's KVO publisher belongs to Combine, not OpenCombine.
+     fileprivate typealias UIStatePublisher = Publishers.Map<
+         Publishers.CombineLatest4<
+--- OpenSwiftUI/Integration/Representable/Platform/PlatformViewHost.swift
++++ OpenSwiftUI/Integration/Representable/Platform/PlatformViewHost.swift
+@@ -284,7 +284,7 @@
+         guard let viewController = representedViewProvider as? PlatformViewController else {
+             return
+         }
+-        guard let view = viewController.view else {
++        guard let view = Optional(viewController.view) else {
+             return
+         }
+         guard view.superview != newSuperview else {
+--- OpenSwiftUI/Render/DisplayList/AppKitDisplayList.swift
++++ OpenSwiftUI/Render/DisplayList/AppKitDisplayList.swift
+@@ -51,7 +51,9 @@
+         default:
+             cls = kind.isContainer ? _NSInheritedView.self : _NSGraphicsView.self
+         }
+-        let view = cls.init(frame: .zero)
++        guard let view = cls.init(frame: .zero) else {
++            preconditionFailure("Unable to allocate platform view")
++        }
+         let layer = type.init()
+         _SetLayerViewDelegate(layer, view)
+         view.layer = layer
+--- OpenSwiftUI/Render/DisplayList/DisplayListViewDrawing.swift
++++ OpenSwiftUI/Render/DisplayList/DisplayListViewDrawing.swift
+@@ -90,7 +90,7 @@
+         #if os(iOS) || os(visionOS)
+         layer.setNeedsDisplay()
+         #elseif os(macOS)
+-        layer?.setNeedsDisplay()
++        layer.setNeedsDisplay()
+         needsDisplay = true
+         #endif
+         return true
+--- OpenSwiftUICore/Data/Codable/CodableHelpers.swift
++++ OpenSwiftUICore/Data/Codable/CodableHelpers.swift
+@@ -259,7 +259,7 @@
+     }
+ 
+     package func encode(to encoder: inout ProtobufEncoder) throws {
+-        let string = NSAttributedString(string: " ", attributes: wrappedValue)
++        let string = NSAttributedString(string: " ", attributes: wrappedValue)!
+         try CodableAttributedString(string).encode(to: &encoder)
+     }
+ 
+--- OpenSwiftUICore/Event/Responder/StyledTextResponder.swift
++++ OpenSwiftUICore/Event/Responder/StyledTextResponder.swift
+@@ -222,7 +222,7 @@
+         enumerateAttribute(.kitLink, in: range) { value, _, stop in
+             if URL(urlValue: value) != nil {
+                 result = true
+-                stop.pointee = true
++                stop?.pointee = true
+             }
+         }
+         return result
+--- OpenSwiftUICore/Shape/Path.swift
++++ OpenSwiftUICore/Shape/Path.swift
+@@ -420,7 +420,7 @@
+     /// describe a valid path.
+     public init?(_ string: String) {
+         #if canImport(CoreGraphics)
+-        let mutablePath = CGMutablePath()
++        guard let mutablePath = CGMutablePath() else { return nil }
+         let nsString = string as NSString
+         guard let str = nsString.utf8String else {
+             return nil
+--- OpenSwiftUICore/Test/Benchmark.swift
++++ OpenSwiftUICore/Test/Benchmark.swift
+@@ -104,7 +104,7 @@
+ package func write(_ measurements: [(any _Benchmark, [Double])], to path: String) throws {
+     let dictionary = Dictionary(uniqueKeysWithValues: measurements.map { (String(describing: $0), $1) })
+     let data = try JSONSerialization.data(withJSONObject: dictionary, options: .prettyPrinted)
+-    let manager = FileManager.default
++    let manager = FileManager.default!
+     let directory = (path as NSString).deletingLastPathComponent
+     try manager.createDirectory(atPath: directory, withIntermediateDirectories: true)
+     try data.write(to: URL(fileURLWithPath: path))
+--- OpenSwiftUICore/Util/Extension/NSAttributedString+Extension.swift
++++ OpenSwiftUICore/Util/Extension/NSAttributedString+Extension.swift
+@@ -22,7 +22,7 @@
+                 return
+             }
+             result = value
+-            stop.pointee = true
++            stop?.pointee = true
+         }
+         return result
+     }
+@@ -37,10 +37,10 @@
+             else {
+                 return
+             }
+-            let newStyle = style.mutableCopy() as! NSMutableParagraphStyle
++            let newStyle = style.self.mutableCopy() as! NSMutableParagraphStyle
+             newStyle.lineBreakMode = newMode
+             if result == nil {
+-                result = mutableCopy() as? NSMutableAttributedString
++                result = self.mutableCopy() as? NSMutableAttributedString
+             }
+             guard let result else {
+                 return
+--- OpenSwiftUICore/Util/StandardLibraryAdditions.swift
++++ OpenSwiftUICore/Util/StandardLibraryAdditions.swift
+@@ -797,8 +797,8 @@
+ 
+ private let roundingFormatter = {
+     let formatter = NumberFormatter()
+-    formatter.minimumFractionDigits = 1
+-    formatter.maximumFractionDigits = 3
++    formatter.setMinimumFractionDigits(1)
++    formatter.setMaximumFractionDigits(3)
+     return formatter
+ }()
+ 
+@@ -813,7 +813,7 @@
+     }
+ 
+     fileprivate func roundedForDisplay() -> Self {
+-        let multiplier = Double.exp10(Double(roundingFormatter.maximumFractionDigits))
++        let multiplier = Double.exp10(Double(roundingFormatter.maximumFractionDigits()))
+         let result = Self((multiplier * Double(self)).rounded() / multiplier)
+         return result == 0 ? 0 : result
+     }
+--- OpenSwiftUICore/View/Image/CGImageConversions.swift
++++ OpenSwiftUICore/View/Image/CGImageConversions.swift
+@@ -113,16 +113,16 @@
+ 
+     package static func context(_ pixelWidth: Int, _ pixelHeight: Int, prefersMask: Bool) -> CGContext? {
+         if prefersMask {
+-            _CGBitmapContextCreate(
++            return _CGBitmapContextCreate(
+                 pixelWidth, pixelHeight,
+                 nil,
+                 CGImageAlphaInfo.alphaOnly.rawValue
+             )
+         } else {
+-            _CGBitmapContextCreate(
++            return _CGBitmapContextCreate(
+                 pixelWidth, pixelHeight,
+                 CGImage.sRGB,
+-                CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
++                UInt32(kCGBitmapByteOrder32Little) | CGImageAlphaInfo.premultipliedLast.rawValue
+             )
+         }
+     }
+--- OpenSwiftUICore/View/Image/NamedImage.swift
++++ OpenSwiftUICore/View/Image/NamedImage.swift
+@@ -1386,7 +1386,7 @@
+                 return 1.0 ... 1.0
+             case .ccSmall, .ccMedium, .ccLarge:
+                 #if canImport(Darwin)
+-                let defaults = UserDefaults.standard
++                let defaults = UserDefaults.standard!
+                 let lower = (defaults.value(forKey: "CCImageScale_MinimumScale") as? CGFloat) ?? 0.0
+                 let upper = (defaults.value(forKey: "CCImageScale_MaximumScale") as? CGFloat) ?? .greatestFiniteMagnitude
+                 return lower ... upper
+--- OpenSwiftUICore/View/Text/AttributedString/Text+AttributedString.swift
++++ OpenSwiftUICore/View/Text/AttributedString/Text+AttributedString.swift
+@@ -659,7 +659,7 @@
+             var attributes = attributes
+             var style = style
+             attributes.transferAttributedStringStyles(to: &style)
+-            let originalString = attributedSubstring(from: range).string
++            let originalString = self.attributedSubstring(from: range).string
+             let platformAttributes = style.nsAttributes(
+                 content: { originalString },
+                 environment: environment,
+@@ -669,12 +669,12 @@
+             )
+             var mergedAttributes = attributes
+             mergedAttributes.merge(platformAttributes) { _, new in new }
+-            setAttributes(mergedAttributes, range: range)
++            self.setAttributes(mergedAttributes, range: range)
+             var resolvedString = originalString.caseConvertedIfNeeded(environment)
+             if environment.shouldRedactContent {
+                 resolvedString = String(repeating: "􀮷", count: resolvedString.count)
+             }
+-            replaceCharacters(in: range, with: resolvedString)
++            self.replaceCharacters(in: range, with: resolvedString)
+         }
+     }
+ }
+--- OpenSwiftUICore/View/Text/Util/ReducedTimelineSchedule.swift
++++ OpenSwiftUICore/View/Text/Util/ReducedTimelineSchedule.swift
+@@ -140,7 +140,7 @@
+         var schedule: (any TimelineSchedule)?
+         enumerateAttribute(.resolvableTextSegment, in: range) { value, range, _ in
+             guard let value = value as? ResolvableTextSegmentAttribute.Value,
+-                  let resolvable = attribute(
++                  let resolvable = self.attribute(
+                       value.resolvableAttributeKey,
+                       at: range.location,
+                       effectiveRange: nil
+--- OpenSwiftUICore/View/Text/Resolve/ResolvedText.swift
++++ OpenSwiftUICore/View/Text/Resolve/ResolvedText.swift
+@@ -7,6 +7,9 @@
+ //  ID: 7AFAB46D18FA6D189589CFA78D8B2B2E (SwiftUICore)
+ 
+ package import Foundation
++#if OPENSWIFTUI_DARLING
++package import AppKit
++#endif
+ package import UIFoundation_Private
+ #if canImport(CoreText)
+ import CoreText
+--- OpenSwiftUI/Integration/PlatformItemList/WidgetAuxiliaryViewMetadata.swift
++++ OpenSwiftUI/Integration/PlatformItemList/WidgetAuxiliaryViewMetadata.swift
+@@ -71,18 +71,18 @@
+                     kind = .string(text.attributedSubstring(from: range).string)
+                 }
+                 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+-                let color = (attributes[.foregroundColor] as? NSColor).map(Color.init)
++                let color = (attributes[NSAttributedString.Key("NSForegroundColorAttributeName")] as? NSColor).map(Color.init)
+                 #elseif canImport(UIKit)
+-                let color = (attributes[.foregroundColor] as? UIColor).map(Color.init)
++                let color = (attributes[NSAttributedString.Key("NSForegroundColorAttributeName")] as? UIColor).map(Color.init)
+                 #else
+                 let color: Color? = nil
+                 #endif
+                 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+-                let font = attributes[.font] as? NSFont
+-                let features = font?.fontDescriptor.object(forKey: .featureSettings) as? [NSDictionary]
++                let font = attributes[NSAttributedString.Key("NSFont")] as? NSFont
++                let features = font?.fontDescriptor()?.object(forKey: NSFontFeatureSettingsAttribute) as? [NSDictionary]
+                 #elseif canImport(UIKit)
+-                let font = attributes[.font] as? UIFont
+-                let features = font?.fontDescriptor.object(forKey: .featureSettings) as? [NSDictionary]
++                let font = attributes[NSAttributedString.Key("NSFont")] as? UIFont
++                let features = font?.fontDescriptor()?.object(forKey: NSFontFeatureSettingsAttribute) as? [NSDictionary]
+                 #else
+                 let features: [CFDictionary]? = nil
+                 #endif
+@@ -104,7 +104,7 @@
+             from attributes: [NSAttributedString.Key: Any]
+         ) -> Metadata.Kind? {
+             #if canImport(AppKit) || canImport(UIKit)
+-            if let attachment = attributes[.attachment] as? NSTextAttachment {
++            if let attachment = attributes[NSAttributedString.Key("NSAttachmentAttributeName")] as? NSTextAttachment {
+                 return metadataKind(from: attachment)
+             }
+             #endif
+--- OpenSwiftUICore/View/Text/Text/Text+StringDrawingContext.swift
++++ OpenSwiftUICore/View/Text/Text/Text+StringDrawingContext.swift
+@@ -565,10 +565,7 @@
+                 let drawingString = storage.scaled(by: scale)
+                 drawingString.draw(
+                     with: rect,
+-                    options: [
+-                        .usesLineFragmentOrigin,
+-                        .requiresFullTextLayout,
+-                    ],
++                    options: 1 | (1 << 20),
+                     context: drawingContext
+                 )
+             }
+--- OpenSwiftUICore/Animation/Transition/TransitionTraitKey.swift
++++ OpenSwiftUICore/Animation/Transition/TransitionTraitKey.swift
+@@ -52,7 +52,7 @@
+     ///         }
+     ///     }
+     @available(OpenSwiftUI_v5_0, *)
+-    @_alwaysEmitIntoClient
++    // Emit the opaque-result descriptor used by other files in this merged module.
+     nonisolated public func transition<T>(_ transition: T) -> some View where T: Transition {
+         self.transition(AnyTransition(transition))
+     }

@@ -1,0 +1,40 @@
+from pathlib import Path
+import difflib,json
+root=Path('/home/cristi/tmp-opencode/az120-swiftui-appzapper-stage')
+backup=Path('/home/cristi/tmp-opencode/appzapper-issue120-evidence/swiftui-stage-before-adaptation')
+patches=[]
+def edit(name,replacements):
+ fs=list(root.rglob(name));assert len(fs)==1,(name,fs)
+ f=fs[0];rel=f.relative_to(root); old=f.read_text(); b=backup/rel
+ if b.exists(): old=b.read_text()
+ else: b.parent.mkdir(parents=True,exist_ok=True);b.write_text(old)
+ new=old
+ for a,z in replacements:
+  assert a in new,(name,a)
+  new=new.replace(a,z)
+ f.write_text(new)
+ patches.extend(difflib.unified_diff(old.splitlines(True),new.splitlines(True),fromfile=str(rel),tofile=str(rel)))
+edit('AccessibilityBoundedNumber.swift',[('.doubleValue','.doubleValue()')])
+edit('AppKitAppDelegate.swift',[('if let localizedInfoDictionary,','if let localizedInfoDictionary = localizedInfoDictionary(),'),('else if let infoDictionary,','else if let infoDictionary = infoDictionary(),')])
+edit('NamedColor.swift',[('#if canImport(Darwin) && canImport(DeveloperToolsSupport)','#if canImport(Darwin) && canImport(DeveloperToolsSupport) && !OPENSWIFTUI_DARLING')])
+edit('PreviewMacro.swift',[('/// Creates an Xcode preview with traits','#if !OPENSWIFTUI_DARLING\n/// Creates an Xcode preview with traits'),('    type: "PreviewMacro"\n)\n#endif','    type: "PreviewMacro"\n)\n#endif\n#endif')])
+edit('ProgressView+Foundation.swift',[('#if canImport(ObjectiveC) && !OPENSWIFTUI_OPENCOMBINE','#if canImport(ObjectiveC) && !OPENSWIFTUI_OPENCOMBINE && !OPENSWIFTUI_DARLING'),('import Foundation','import Foundation\n#if OPENSWIFTUI_DARLING\nimport CombineFoundation\n#endif')])
+edit('PlatformViewHost.swift',[('guard let view = viewController.view else','guard let view = Optional(viewController.view) else')])
+edit('AppKitDisplayList.swift',[('let view = cls.init(frame: .zero)','guard let view = cls.init(frame: .zero) else {\n            preconditionFailure("Unable to allocate platform view")\n        }')])
+edit('DisplayListViewDrawing.swift',[('layer?.setNeedsDisplay()','layer.setNeedsDisplay()')])
+edit('CodableHelpers.swift',[('NSAttributedString(string: " ", attributes: wrappedValue)','NSAttributedString(string: " ", attributes: wrappedValue)!')])
+edit('StyledTextResponder.swift',[('stop.pointee','stop?.pointee')])
+edit('Path.swift',[('let mutablePath = CGMutablePath()\n        let nsString','guard let mutablePath = CGMutablePath() else { return nil }\n        let nsString')])
+edit('Benchmark.swift',[('let manager = FileManager.default','let manager = FileManager.default!')])
+edit('NSAttributedString+Extension.swift',[('stop.pointee','stop?.pointee'),('mutableCopy()','self.mutableCopy()')])
+edit('StandardLibraryAdditions.swift',[('formatter.minimumFractionDigits = 1','formatter.setMinimumFractionDigits(1)'),('formatter.maximumFractionDigits = 3','formatter.setMaximumFractionDigits(3)'),('Double(roundingFormatter.maximumFractionDigits)','Double(roundingFormatter.maximumFractionDigits())')])
+edit('CGImageConversions.swift',[('            _CGBitmapContextCreate(','            return _CGBitmapContextCreate('),('CGBitmapInfo.byteOrder32Little.rawValue','UInt32(kCGBitmapByteOrder32Little)')])
+edit('NamedImage.swift',[('let defaults = UserDefaults.standard','let defaults = UserDefaults.standard!')])
+edit('Text+AttributedString.swift',[('let originalString = attributedSubstring','let originalString = self.attributedSubstring'),('            setAttributes(mergedAttributes','            self.setAttributes(mergedAttributes'),('            replaceCharacters(in: range','            self.replaceCharacters(in: range')])
+edit('ReducedTimelineSchedule.swift',[('let resolvable = attribute(','let resolvable = self.attribute(')])
+edit('ResolvedText.swift',[('package import Foundation','package import Foundation\n#if OPENSWIFTUI_DARLING\npackage import AppKit\n#endif')])
+edit('WidgetAuxiliaryViewMetadata.swift',[('attributes[.foregroundColor]','attributes[NSAttributedString.Key("NSForegroundColorAttributeName")]'),('attributes[.attachment]','attributes[NSAttributedString.Key("NSAttachmentAttributeName")]'),('attributes[.font]','attributes[NSAttributedString.Key("NSFont")]'),('font?.fontDescriptor.object(forKey: .featureSettings)','font?.fontDescriptor()?.object(forKey: NSFontFeatureSettingsAttribute)')])
+edit('Text+StringDrawingContext.swift',[('options: [\n                        .usesLineFragmentOrigin,\n                        .requiresFullTextLayout,\n                    ],','options: 1 | (1 << 20),')])
+edit('TransitionTraitKey.swift', [('    @available(OpenSwiftUI_v5_0, *)\n    @_alwaysEmitIntoClient\n    nonisolated public func transition<T>', '    @available(OpenSwiftUI_v5_0, *)\n    // Emit the opaque-result descriptor used by other files in this merged module.\n    nonisolated public func transition<T>')])
+Path('/home/cristi/tmp-opencode/appzapper-issue120-evidence/swiftui-darling-stage.patch').write_text(''.join(patches))
+print('Adapted',len(list(backup.rglob('*.swift'))),'private stage files')
