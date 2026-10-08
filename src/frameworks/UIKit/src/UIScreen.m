@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #import <UIKit/UIScreen.h>
+#import <AppKit/NSGraphics.h>
 #import <AppKit/NSScreen.h>
 #import <AppKit/NSErrors.h>
 #import <Foundation/NSException.h>
@@ -11,11 +12,11 @@
 - (instancetype)initWithNativeScreen:(NSScreen *)screen;
 @end
 
+static NSArray<UIScreen *> *cachedScreens;
+
 @implementation UIScreen {
     NSScreen *_nativeScreen;
 }
-
-static NSArray<UIScreen *> *cachedScreens;
 
 + (NSArray<UIScreen *> *)screens
 {
@@ -44,32 +45,6 @@ static NSArray<UIScreen *> *cachedScreens;
         cachedScreens = [screens copy];
         return cachedScreens;
     }
-}
-
-+ (UIScreen *)mainScreen
-{
-    return [[self screens] firstObject];
-}
-
-- (instancetype)initWithNativeScreen:(NSScreen *)screen;
-@end
-
-@implementation UIScreen {
-    NSScreen *_nativeScreen;
-}
-
-+ (NSArray<UIScreen *> *)screens
-{
-    NSArray *nativeScreens = [NSScreen screens];
-    if ([nativeScreens count] == 0) {
-        [NSException raise:NSWindowServerCommunicationException
-                    format:@"UIScreen requires a connected display"];
-    }
-    NSMutableArray *screens = [NSMutableArray arrayWithCapacity:[nativeScreens count]];
-    for (NSScreen *native in nativeScreens) {
-        [screens addObject:[[UIScreen alloc] initWithNativeScreen:native]];
-    }
-    return [screens copy];
 }
 
 + (UIScreen *)mainScreen

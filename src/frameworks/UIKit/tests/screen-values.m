@@ -2,6 +2,7 @@
 #import <UIKit/UIScreen.h>
 #import <AppKit/NSApplication.h>
 #import <AppKit/NSScreen.h>
+#import <AppKit/NSErrors.h>
 #import <Foundation/NSException.h>
 #import <Foundation/NSString.h>
 #import <objc/runtime.h>
@@ -107,7 +108,7 @@ int main(int argc, char **argv)
                 [screenClass screensForNativeScreens:@[ stub(NSMakeRect(0, 0, 100, 100), 0) ]]; }));
             CHECK(raises(NSInternalInconsistencyException, ^{
                 [screenClass screensForNativeScreens:@[ stub(NSMakeRect(0, 0, NAN, 100), 1) ]]; }));
-            CHECK(raises(NSInvalidArgumentException, ^{ [[screenClass alloc] init]; }));
+            CHECK(raises(NSInvalidArgumentException, ^{ (void)[[screenClass alloc] init]; }));
 
             StubScreen *offset = stub(NSMakeRect(40, 30, 200, 100), 2);
             UIScreen *wrapped = [[screenClass screensForNativeScreens:@[ offset ]] firstObject];
