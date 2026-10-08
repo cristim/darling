@@ -5,3 +5,4 @@
 #import <UIKit/UIImage.h>
 #import <UIKit/UIGraphicsImageContext.h>
 #import <UIKit/UISceneConfiguration.h>
+#import <UIKit/UIResponder.h>
