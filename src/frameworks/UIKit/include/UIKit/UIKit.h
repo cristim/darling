@@ -3,3 +3,4 @@
 #import <UIKit/UIGraphicsContext.h>
 #import <UIKit/UIColor.h>
 #import <UIKit/UIImage.h>
+#import <UIKit/UIGraphicsImageContext.h>
