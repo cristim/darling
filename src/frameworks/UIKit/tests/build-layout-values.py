@@ -9,6 +9,7 @@ parser.add_argument('--source-root', required=True, type=Path)
 parser.add_argument('--runtime-root', required=True, type=Path)
 parser.add_argument('--build-dir', required=True, type=Path)
 parser.add_argument('--linker', required=True, type=Path)
+parser.add_argument('--test-source', type=Path)
 args = parser.parse_args()
 source = args.source_root.resolve()
 runtime = args.runtime_root.resolve()
@@ -51,10 +52,14 @@ def run(command):
         print(result.stderr[-6000:])
         raise SystemExit('command failed; see build.log and commands.json')
 
-run(compile_flags + ['-MD', '-MF', output / 'test.d', '-c', component / 'tests/layout-values.m', '-o', output / 'test.o'])
-run(link_flags + ['-o', output / 'layout-values', output / 'test.o'] + libraries)
-run(compile_flags + ['-MD', '-MF', output / 'layout.d', '-c', component / 'src/UICollectionViewCompositionalLayout.m',
-                     '-o', output / 'layout.o'])
+test = args.test_source.resolve() if args.test_source else component / 'tests/layout-values.m'
+run(compile_flags + ['-MD', '-MF', output / 'test.d', '-c', test, '-o', output / 'test.o'])
+run(link_flags + ['-o', output / test.stem, output / 'test.o'] + libraries)
+objects = []
+for implementation in sorted((component / 'src').glob('*.m')):
+    obj = output / (implementation.stem + '.o')
+    run(compile_flags + ['-MD', '-MF', obj.with_suffix('.d'), '-c', implementation, '-o', obj])
+    objects.append(obj)
 run(link_flags + ['-dynamiclib', '-install_name',
                   '/System/iOSSupport/System/Library/Frameworks/UIKit.framework/Versions/A/UIKit',
-                  '-o', output / 'UIKit', output / 'layout.o'] + libraries)
+                  '-o', output / 'UIKit'] + objects + libraries)
