@@ -30,6 +30,12 @@ for name in ['Symbols','AttributeGraph','RenderBox','CombineFoundation','Logging
  targets.append({'name':name+'-link','argv':command,'inputs':inputs,'outputs':[output]});links.append(name+'-link')
 artifacts=[]
 for r in json.loads((base/'linked/link-results.json').read_text()):artifacts.append({'source':subst(r['output']),'path':r['install_name'].lstrip('/')})
+# Install compiler modules with the linked runtime; clients need these imports.
+for item in json.loads((base/'dependency-build/source-build-manifest.json').read_text()):
+ name=item['module']
+ destination=('System/Library/Frameworks/Symbols.framework/Versions/A/Modules' if name=='Symbols' else 'usr/lib/swift')
+ artifacts.append({'source':'{workspace}/deps/modules/'+name+'.swiftmodule','path':destination+'/'+name+'.swiftmodule/arm64-apple-macos.swiftmodule','kind':'swiftmodule'})
+artifacts.append({'source':'{workspace}/swiftui/modules/SwiftUI.swiftmodule','path':'System/Library/Frameworks/SwiftUI.framework/Versions/A/Modules/SwiftUI.swiftmodule/arm64-apple-macos.swiftmodule','kind':'swiftmodule'})
 generated.append({'path':'{workspace}/install-artifacts.json','contents':json.dumps(artifacts,indent=2)})
 targets.append({'name':'SwiftUI-install','argv':['python3',str(Path(__file__).with_name('install.py')),'--artifacts','{workspace}/install-artifacts.json','--image','{workspace}/image'],'inputs':[a['source'] for a in artifacts]+[str(Path(__file__).with_name('install.py'))], 'outputs':['{workspace}/image/'+a['path'] for a in artifacts]})
 sources=[]

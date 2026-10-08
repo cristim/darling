@@ -59,7 +59,7 @@
     },
     {
       "path": "{workspace}/install-artifacts.json",
-      "contents": "[\n  {\n    \"source\": \"{workspace}/linked/Symbols.dylib\",\n    \"path\": \"System/Library/Frameworks/Symbols.framework/Versions/A/Symbols\"\n  },\n  {\n    \"source\": \"{workspace}/linked/AttributeGraph.dylib\",\n    \"path\": \"usr/lib/libAttributeGraph.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/RenderBox.dylib\",\n    \"path\": \"usr/lib/libRenderBox.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/CombineFoundation.dylib\",\n    \"path\": \"usr/lib/libCombineFoundation.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/Logging.dylib\",\n    \"path\": \"usr/lib/libLogging.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/OpenObservation.dylib\",\n    \"path\": \"usr/lib/libOpenObservation.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/OpenCoreGraphicsShims.dylib\",\n    \"path\": \"usr/lib/libOpenCoreGraphicsShims.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/SwiftUI.dylib\",\n    \"path\": \"System/Library/Frameworks/SwiftUI.framework/Versions/A/SwiftUI\"\n  }\n]"
+      "contents": "[\n  {\n    \"source\": \"{workspace}/linked/Symbols.dylib\",\n    \"path\": \"System/Library/Frameworks/Symbols.framework/Versions/A/Symbols\"\n  },\n  {\n    \"source\": \"{workspace}/linked/AttributeGraph.dylib\",\n    \"path\": \"usr/lib/libAttributeGraph.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/RenderBox.dylib\",\n    \"path\": \"usr/lib/libRenderBox.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/CombineFoundation.dylib\",\n    \"path\": \"usr/lib/libCombineFoundation.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/Logging.dylib\",\n    \"path\": \"usr/lib/libLogging.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/OpenObservation.dylib\",\n    \"path\": \"usr/lib/libOpenObservation.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/OpenCoreGraphicsShims.dylib\",\n    \"path\": \"usr/lib/libOpenCoreGraphicsShims.dylib\"\n  },\n  {\n    \"source\": \"{workspace}/linked/SwiftUI.dylib\",\n    \"path\": \"System/Library/Frameworks/SwiftUI.framework/Versions/A/SwiftUI\"\n  },\n  {\n    \"source\": \"{workspace}/deps/modules/OpenAttributeGraph.swiftmodule\",\n    \"path\": \"usr/lib/swift/OpenAttributeGraph.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  },\n  {\n    \"source\": \"{workspace}/deps/modules/OpenAttributeGraphShims.swiftmodule\",\n    \"path\": \"usr/lib/swift/OpenAttributeGraphShims.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  },\n  {\n    \"source\": \"{workspace}/deps/modules/OpenRenderBox.swiftmodule\",\n    \"path\": \"usr/lib/swift/OpenRenderBox.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  },\n  {\n    \"source\": \"{workspace}/deps/modules/OpenRenderBoxShims.swiftmodule\",\n    \"path\": \"usr/lib/swift/OpenRenderBoxShims.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  },\n  {\n    \"source\": \"{workspace}/deps/modules/CombineFoundation.swiftmodule\",\n    \"path\": \"usr/lib/swift/CombineFoundation.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  },\n  {\n    \"source\": \"{workspace}/deps/modules/Logging.swiftmodule\",\n    \"path\": \"usr/lib/swift/Logging.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  },\n  {\n    \"source\": \"{workspace}/deps/modules/OpenObservation.swiftmodule\",\n    \"path\": \"usr/lib/swift/OpenObservation.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  },\n  {\n    \"source\": \"{workspace}/deps/modules/OpenCoreGraphicsShims.swiftmodule\",\n    \"path\": \"usr/lib/swift/OpenCoreGraphicsShims.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  },\n  {\n    \"source\": \"{workspace}/deps/modules/Symbols.swiftmodule\",\n    \"path\": \"System/Library/Frameworks/Symbols.framework/Versions/A/Modules/Symbols.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  },\n  {\n    \"source\": \"{workspace}/swiftui/modules/SwiftUI.swiftmodule\",\n    \"path\": \"System/Library/Frameworks/SwiftUI.framework/Versions/A/Modules/SwiftUI.swiftmodule/arm64-apple-macos.swiftmodule\",\n    \"kind\": \"swiftmodule\"\n  }\n]"
     }
   ],
   "targets": [
@@ -21249,6 +21249,16 @@
         "{workspace}/linked/OpenObservation.dylib",
         "{workspace}/linked/OpenCoreGraphicsShims.dylib",
         "{workspace}/linked/SwiftUI.dylib",
+        "{workspace}/deps/modules/OpenAttributeGraph.swiftmodule",
+        "{workspace}/deps/modules/OpenAttributeGraphShims.swiftmodule",
+        "{workspace}/deps/modules/OpenRenderBox.swiftmodule",
+        "{workspace}/deps/modules/OpenRenderBoxShims.swiftmodule",
+        "{workspace}/deps/modules/CombineFoundation.swiftmodule",
+        "{workspace}/deps/modules/Logging.swiftmodule",
+        "{workspace}/deps/modules/OpenObservation.swiftmodule",
+        "{workspace}/deps/modules/OpenCoreGraphicsShims.swiftmodule",
+        "{workspace}/deps/modules/Symbols.swiftmodule",
+        "{workspace}/swiftui/modules/SwiftUI.swiftmodule",
         "/home/cristi/tmp-opencode/az120-swiftui-builder/install.py"
       ],
       "outputs": [
@@ -21259,7 +21269,17 @@
         "{workspace}/image/usr/lib/libLogging.dylib",
         "{workspace}/image/usr/lib/libOpenObservation.dylib",
         "{workspace}/image/usr/lib/libOpenCoreGraphicsShims.dylib",
-        "{workspace}/image/System/Library/Frameworks/SwiftUI.framework/Versions/A/SwiftUI"
+        "{workspace}/image/System/Library/Frameworks/SwiftUI.framework/Versions/A/SwiftUI",
+        "{workspace}/image/usr/lib/swift/OpenAttributeGraph.swiftmodule/arm64-apple-macos.swiftmodule",
+        "{workspace}/image/usr/lib/swift/OpenAttributeGraphShims.swiftmodule/arm64-apple-macos.swiftmodule",
+        "{workspace}/image/usr/lib/swift/OpenRenderBox.swiftmodule/arm64-apple-macos.swiftmodule",
+        "{workspace}/image/usr/lib/swift/OpenRenderBoxShims.swiftmodule/arm64-apple-macos.swiftmodule",
+        "{workspace}/image/usr/lib/swift/CombineFoundation.swiftmodule/arm64-apple-macos.swiftmodule",
+        "{workspace}/image/usr/lib/swift/Logging.swiftmodule/arm64-apple-macos.swiftmodule",
+        "{workspace}/image/usr/lib/swift/OpenObservation.swiftmodule/arm64-apple-macos.swiftmodule",
+        "{workspace}/image/usr/lib/swift/OpenCoreGraphicsShims.swiftmodule/arm64-apple-macos.swiftmodule",
+        "{workspace}/image/System/Library/Frameworks/Symbols.framework/Versions/A/Modules/Symbols.swiftmodule/arm64-apple-macos.swiftmodule",
+        "{workspace}/image/System/Library/Frameworks/SwiftUI.framework/Versions/A/Modules/SwiftUI.swiftmodule/arm64-apple-macos.swiftmodule"
       ]
     }
   ],
