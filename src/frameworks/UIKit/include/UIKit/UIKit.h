@@ -2,3 +2,4 @@
 #import <UIKit/UIGeometry.h>
 #import <UIKit/UIGraphicsContext.h>
 #import <UIKit/UIColor.h>
+#import <UIKit/UIImage.h>

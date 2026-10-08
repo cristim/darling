@@ -8,8 +8,8 @@ add_framework(UIKit
     CURRENT_VERSION
     FAT
     VERSION A
-    SOURCES src/UICollectionViewCompositionalLayout.m src/UIGeometry.m src/UIGraphicsContext.m src/UIColor.m
-    DEPENDENCIES AppKit CoreGraphics Foundation objc system
+    SOURCES src/UICollectionViewCompositionalLayout.m src/UIGeometry.m src/UIGraphicsContext.m src/UIColor.m src/UIImage.m
+    DEPENDENCIES AppKit CoreFoundation CoreGraphics Foundation ImageIO objc system
 )
 target_include_directories(UIKit PRIVATE include)
 target_compile_options(UIKit PRIVATE -fobjc-arc)
