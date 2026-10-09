@@ -38,7 +38,7 @@ env:
 
 jobs:
   prepare:
-    if: ${{ github.event_name != 'schedule' || github.repository == 'VibeDarling/darling' }}
+    if: ${{ (github.repository == 'VibeDarling/darling' && github.ref == 'refs/heads/master') || vars.RELEASE_PILOT == 'true' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -54,13 +54,6 @@ jobs:
         with:
           path: ci
           persist-credentials: false
-
-      - name: Refuse releases from other repositories or refs
-        run: |
-          [ "$GITHUB_REPOSITORY" = VibeDarling/darling ] && [ "$GITHUB_REF" = refs/heads/master ] || [ -n "$EXTRA_CMAKE_ARGS" ] || {
-            echo "releases are built only from refs/heads/master of VibeDarling/darling (or by the PILOT block)" >&2
-            exit 1
-          }
 
       - name: Refuse pilot flags on a stable release
         env:
@@ -228,20 +221,14 @@ jobs:
 
   publish:
     needs: [prepare, build]
-    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
+    if: ${{ !cancelled() && needs.build.result != 'skipped' && ((github.repository == 'VibeDarling/darling' && github.ref == 'refs/heads/master') || vars.RELEASE_PILOT == 'true') }}
     runs-on: ubuntu-24.04
+    environment: release
     permissions:
       contents: write
       id-token: write
       attestations: write
     steps:
-      - name: Refuse releases from other repositories or refs
-        run: |
-          [ "$GITHUB_REPOSITORY" = VibeDarling/darling ] && [ "$GITHUB_REF" = refs/heads/master ] || [ -n "$EXTRA_CMAKE_ARGS" ] || {
-            echo "releases are built only from refs/heads/master of VibeDarling/darling (or by the PILOT block)" >&2
-            exit 1
-          }
-
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
