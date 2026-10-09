@@ -13,6 +13,10 @@ on:
         description: Build even if no module changed since the previous release
         type: boolean
         default: false
+      allow_partial:
+        description: Publish a prerelease even if one architecture failed
+        type: boolean
+        default: false
   push:
     branches: [ci/prebuilt-release]
 
@@ -47,6 +51,15 @@ jobs:
         with:
           path: ci
           persist-credentials: false
+
+      - name: Refuse pilot flags on a stable release
+        env:
+          PRERELEASE: ${{ github.event_name == 'push' || inputs.prerelease }}
+        run: |
+          [ -z "$EXTRA_CMAKE_ARGS" ] || [ "$PRERELEASE" = "true" ] || {
+            echo "EXTRA_CMAKE_ARGS (the PILOT ONLY block) is set; only prerelease runs may use it. Delete the block to build stable releases." >&2
+            exit 1
+          }
 
       - id: v
         env:
@@ -215,19 +228,33 @@ jobs:
           pattern: runtime-*
           path: art
 
+      - name: Decide the release kind
+        id: kind
+        env:
+          PRERELEASE: ${{ github.event_name == 'push' || inputs.prerelease }}
+          ALLOW_PARTIAL: ${{ inputs.allow_partial }}
+        run: |
+          shopt -s nullglob
+          frags=(art/*/fragment-*.json)
+          pre="$PRERELEASE"
+          if [ "${#frags[@]}" -ne 2 ]; then
+            [ "$ALLOW_PARTIAL" = "true" ] || { echo "${#frags[@]} of 2 architectures built; re-run, or dispatch with allow_partial" >&2; exit 1; }
+            pre=true
+          fi
+          flag=""; [ "$pre" = "true" ] && flag="--prerelease"
+          echo "flag=$flag" >> "$GITHUB_OUTPUT"
+
       - name: Build manifest and checksums
         run: |
           shopt -s nullglob
           frags=(art/*/fragment-*.json)
-          [ "${#frags[@]}" -gt 0 ] || { echo "no architecture built" >&2; exit 1; }
           mkdir rel
           cp art/*/*.tar.zst rel/
           first=$(ls -d art/*/ | head -1)
           cp "$first"refs.lock.json "$first"nested.refs.lock.json rel/
-          pre=""; [ "${{ github.event_name == 'push' || inputs.prerelease }}" = "true" ] && pre="--prerelease"
           python3 scripts/ci/package_runtime.py merge --version "${{ needs.prepare.outputs.version }}" \
             --repo "${{ github.repository }}" --sha "${{ needs.prepare.outputs.sha }}" \
-            --fragments "${frags[@]}" --lock-dirs art/*/ $pre \
+            --fragments "${frags[@]}" --lock-dirs art/*/ ${{ steps.kind.outputs.flag }} \
             --published-at "$(date -u +%FT%TZ)" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --builder "${{ github.repository }}@${{ github.sha }}" --cmake-args "$EXTRA_CMAKE_ARGS" \
@@ -244,8 +271,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ needs.prepare.outputs.version }}"
-          pre=""; [ "${{ github.event_name == 'push' || inputs.prerelease }}" = "true" ] && pre="--prerelease"
-          gh release create "$tag" rel/* --draft $pre --target "${{ github.sha }}" \
+          gh release create "$tag" rel/* --draft ${{ steps.kind.outputs.flag }} --target "${{ github.sha }}" \
             --title "Darling runtime $tag" \
             --notes "Built from ${{ env.SOURCE_REPO }} ${{ needs.prepare.outputs.sha }} (default branches, no PRs). Extra CMake args: ${{ env.EXTRA_CMAKE_ARGS }}. Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo ${{ github.repository }}"
           gh release edit "$tag" --draft=false
