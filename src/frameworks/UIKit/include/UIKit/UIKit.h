@@ -6,3 +6,6 @@
 #import <UIKit/UIGraphicsImageContext.h>
 #import <UIKit/UISceneConfiguration.h>
 #import <UIKit/UIResponder.h>
+#import <UIKit/UIScreen.h>
+#import <UIKit/UIApplicationDelegate.h>
+#import <UIKit/UIApplication.h>

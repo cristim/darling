@@ -26,7 +26,8 @@ width/height. This is a documented desktop adaptation, not an inferred Apple
 implementation. Wrappers query actual NSScreen metadata; there is no fabricated
 resolution or fallback scale. This first proof covers stable, isolated single
 outputs at integer scales1 and2; no multi-output identity/hotplug/change/rotation,
-fractional scale, nativeBounds/nativeScale or stable wrapper-identity claim.
+fractional scale or nativeBounds/nativeScale claim. Wrapper identity is measured only
+across repeated calls with an unchanged output, not across hotplug.
 
 Unavailable display/backend failures propagate from AppKit. An empty native list
 raises NSWindowServerCommunicationException. A backend inheriting the known
@@ -52,3 +53,9 @@ compositor's measured output, never from assumed values.
 - stub NSScreen subclasses: empty list, inherited base scale getter, zero or NaN
   geometry and zero scale each raise; direct `init` raises; a screen at a non-zero
   origin reports bounds origin 0,0
+
+Fail-before: the same executable built against a UIKit without UIScreen fails
+`screenClass != Nil`. Each check above was also confirmed by a deletion probe: delete
+the behaviour in UIScreen.m, rebuild, and the fixture fails on that check. The
+`@synchronized` around the wrapper cache has no fixture; concurrent first use is
+not exercised.

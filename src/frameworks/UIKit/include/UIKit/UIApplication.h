@@ -3,6 +3,7 @@
 
 #import <UIKit/UIResponder.h>
 #import <UIKit/UIApplicationDelegate.h>
+#import <Foundation/NSObjCRuntime.h>
 
 NS_ASSUME_NONNULL_BEGIN
 typedef NS_ENUM(NSInteger, UIApplicationState) {
@@ -18,10 +19,9 @@ typedef NS_ENUM(NSInteger, UIApplicationState) {
 @property(nonatomic, readonly) UIApplicationState applicationState;
 @end
 
-// Darling host failure policy, not UIKit behaviour: any startup failure writes one
-// "UIApplicationMain: <cause>" line to stderr and exits with status 1 before the
-// run loop starts. Success never returns.
-int UIApplicationMain(int argc, char *_Nullable *_Nonnull argv,
+// Darling host failure policy, not UIKit behaviour: a startup failure writes one
+// "UIApplicationMain: <cause>" line to stderr and exits with status 1. Success never returns.
+FOUNDATION_EXPORT int UIApplicationMain(int argc, char *_Nullable *_Nonnull argv,
                       NSString *_Nullable principalClassName,
                       NSString *_Nullable delegateClassName);
 NS_ASSUME_NONNULL_END

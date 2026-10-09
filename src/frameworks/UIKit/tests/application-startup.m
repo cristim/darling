@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Mode comes from UIAPP_FIXTURE_MODE (see application-startup.md).
-#import <UIKit/UIApplication.h>
+#import <UIKit/UIKit.h>
 #import <AppKit/NSApplication.h>
 #import <Foundation/Foundation.h>
 #include <objc/runtime.h>
@@ -10,6 +10,8 @@
 
 static const char *mode;
 static int willCount, didCount;
+static int savedArgc;
+static char **savedArgv;
 
 @interface FixtureApplication : UIApplication
 @end
@@ -79,7 +81,7 @@ static int shapeInitCount;
     [center postNotificationName:NSApplicationDidResignActiveNotification object:NSApp];
     fprintf(stderr, "state-inactive=%d\n", a.applicationState == UIApplicationStateInactive);
     if (!strcmp(mode, "duplicate")) {
-        UIApplicationMain(0, NULL, nil, nil);
+        UIApplicationMain(savedArgc, savedArgv, nil, nil);
     }
     [NSTimer scheduledTimerWithTimeInterval:0.2 target:self selector:@selector(fire:) userInfo:nil repeats:NO];
     return YES;
@@ -99,8 +101,6 @@ static int shapeInitCount;
 }
 @end
 
-static int savedArgc;
-static char **savedArgv;
 static NSString *savedDelegate;
 
 @interface Helper : NSObject

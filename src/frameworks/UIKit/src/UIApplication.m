@@ -4,6 +4,7 @@
 #import <AppKit/NSImage.h>
 #import <UIKit/UIScreen.h>
 #import <Foundation/NSBundle.h>
+#import <Foundation/NSCharacterSet.h>
 #import <Foundation/NSException.h>
 #import <Foundation/NSNotification.h>
 #import <Foundation/NSThread.h>
@@ -17,8 +18,18 @@ static id bridge;
 
 __attribute__((noreturn)) static void fail(NSString *cause)
 {
-    fprintf(stderr, "UIApplicationMain: %s\n", [cause UTF8String]);
+    NSArray *lines = [cause componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+    fprintf(stderr, "UIApplicationMain: %s\n", [[lines componentsJoinedByString:@" "] UTF8String]);
     exit(1);
+}
+
+static void guarded(NSString *phase, void (^body)(void))
+{
+    @try {
+        body();
+    } @catch (NSException *e) {
+        fail([NSString stringWithFormat:@"exception in %@: %@: %@", phase, [e name], [e reason]]);
+    }
 }
 
 @interface UIApplication ()
@@ -35,55 +46,57 @@ __attribute__((noreturn)) static void fail(NSString *cause)
 }
 @end
 
-// Forwards AppKit launch/focus/termination notifications to the UIKit delegate.
+// Forwards AppKit launch/focus/termination notifications to the UIKit delegate. It is also the
+// NSApplication delegate, so AppKit hands it the process arguments it would open as documents.
 @interface UIApplicationAppKitBridge : NSObject
-@property(nonatomic, retain) UIApplication *application;
 @property(nonatomic, retain) id<UIApplicationDelegate> delegateOwner;
 @end
 
 @implementation UIApplicationAppKitBridge
 
+// Delegate BOOL results report whether launch options were handled; they are not a startup verdict.
 - (void)willFinishLaunching:(NSNotification *)note
 {
-    [self invoke:@selector(application:willFinishLaunchingWithOptions:) phase:@"willFinishLaunching"];
+    id<UIApplicationDelegate> delegate = sharedApplication.delegate;
+    if ([delegate respondsToSelector:@selector(application:willFinishLaunchingWithOptions:)]) {
+        guarded(@"willFinishLaunching", ^{
+            [delegate application:sharedApplication willFinishLaunchingWithOptions:@{}];
+        });
+    }
 }
 
 - (void)didFinishLaunching:(NSNotification *)note
 {
-    [self invoke:@selector(application:didFinishLaunchingWithOptions:) phase:@"didFinishLaunching"];
-}
-
-// The BOOL result only reports whether launch options were handled; it is not a startup verdict.
-- (void)invoke:(SEL)selector phase:(NSString *)phase
-{
-    id<UIApplicationDelegate> delegate = _application.delegate;
-    if (![(id)delegate respondsToSelector:selector]) {
-        return;
-    }
-    @try {
-        BOOL (*send)(id, SEL, UIApplication *, NSDictionary *) = (void *)[(id)delegate methodForSelector:selector];
-        send(delegate, selector, _application, @{});
-    } @catch (NSException *e) {
-        fail([NSString stringWithFormat:@"exception in %@: %@: %@", phase, [e name], [e reason]]);
+    id<UIApplicationDelegate> delegate = sharedApplication.delegate;
+    if ([delegate respondsToSelector:@selector(application:didFinishLaunchingWithOptions:)]) {
+        guarded(@"didFinishLaunching", ^{
+            [delegate application:sharedApplication didFinishLaunchingWithOptions:@{}];
+        });
     }
 }
 
 - (void)didBecomeActive:(NSNotification *)note
 {
-    _application.applicationState = UIApplicationStateActive;
+    sharedApplication.applicationState = UIApplicationStateActive;
 }
 
 - (void)didResignActive:(NSNotification *)note
 {
-    _application.applicationState = UIApplicationStateInactive;
+    sharedApplication.applicationState = UIApplicationStateInactive;
 }
 
 - (void)willTerminate:(NSNotification *)note
 {
-    id<UIApplicationDelegate> delegate = _application.delegate;
-    if ([(id)delegate respondsToSelector:@selector(applicationWillTerminate:)]) {
-        [delegate applicationWillTerminate:_application];
+    id<UIApplicationDelegate> delegate = sharedApplication.delegate;
+    if ([delegate respondsToSelector:@selector(applicationWillTerminate:)]) {
+        [delegate applicationWillTerminate:sharedApplication];
     }
+}
+
+// UIKit launch arguments are not documents; without this AppKit opens every non-dash argument,
+// including the value of a "-Key value" pair.
+- (void)application:(NSApplication *)application openFiles:(NSArray *)files
+{
 }
 @end
 
@@ -97,28 +110,25 @@ int UIApplicationMain(int argc, char **argv, NSString *principalClassName, NSStr
     }
     mainEntered = YES;
 
-    // Cocotron shows a splash window for a "splash" image and opens documents or calls
-    // newDocument: during launch; none of that is a UIKit startup path.
-    for (int i = 1; i < argc; i++) {
-        if (argv[i][0] != '-') {
-            fail(@"document arguments are unsupported");
-        }
-    }
+    // Cocotron's -[NSApplication init] shows a "splash" image as a window; UIKit has no such path.
     if ([NSImage imageNamed:@"splash"] != nil) {
         fail(@"unsupported splash image");
     }
 
     NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
-    for (NSString *key in @[ @"NSMainNibFile", @"UIMainStoryboardFile", @"UIApplicationSceneManifest", @"CFBundleDocumentTypes" ]) {
+    for (NSString *key in @[ @"NSMainNibFile", @"UIMainStoryboardFile" ]) {
         if (info[key] != nil) {
             fail([NSString stringWithFormat:@"unsupported configured resource %@", key]);
         }
+    }
+    if (info[@"UIApplicationSceneManifest"] != nil) {
+        fprintf(stderr, "UIKit: UIApplicationSceneManifest is not supported; launching without scene sessions\n");
     }
 
     Class principal = [UIApplication class];
     if (principalClassName != nil) {
         principal = NSClassFromString(principalClassName);
-        if (principal == Nil || ![principal isSubclassOfClass:[UIApplication class]]) {
+        if (![principal isSubclassOfClass:[UIApplication class]]) {
             fail([NSString stringWithFormat:@"principal class %@ is not a UIApplication class", principalClassName]);
         }
     }
@@ -126,7 +136,7 @@ int UIApplicationMain(int argc, char **argv, NSString *principalClassName, NSStr
     Class delegateClass = Nil;
     if (delegateClassName != nil) {
         delegateClass = NSClassFromString(delegateClassName);
-        if (delegateClass == Nil || ![delegateClass conformsToProtocol:@protocol(UIApplicationDelegate)]) {
+        if (![delegateClass conformsToProtocol:@protocol(UIApplicationDelegate)]) {
             fail([NSString stringWithFormat:@"delegate class %@ does not conform to UIApplicationDelegate", delegateClassName]);
         }
     }
@@ -134,20 +144,21 @@ int UIApplicationMain(int argc, char **argv, NSString *principalClassName, NSStr
     @try {
         (void)[UIScreen screens];
     } @catch (NSException *e) {
-        fail([NSString stringWithFormat:@"no display: %@: %@", [e name], [e reason]]);
+        fail([NSString stringWithFormat:@"screen query failed: %@: %@", [e name], [e reason]]);
     }
     [NSApplication sharedApplication];
 
-    sharedApplication = [[principal alloc] init];
-    sharedApplication.applicationState = UIApplicationStateInactive;
-
     UIApplicationAppKitBridge *appKitBridge = [[UIApplicationAppKitBridge alloc] init];
     bridge = appKitBridge;
-    appKitBridge.application = sharedApplication;
-    if (delegateClass != Nil) {
-        appKitBridge.delegateOwner = [[delegateClass alloc] init];
-        sharedApplication.delegate = appKitBridge.delegateOwner;
-    }
+    guarded(@"application or delegate init", ^{
+        sharedApplication = [[principal alloc] init];
+        if (delegateClass != Nil) {
+            appKitBridge.delegateOwner = [[delegateClass alloc] init];
+        }
+    });
+    sharedApplication.applicationState = UIApplicationStateInactive;
+    sharedApplication.delegate = appKitBridge.delegateOwner;
+    [NSApp setDelegate:(id)appKitBridge];
 
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center addObserver:appKitBridge selector:@selector(willFinishLaunching:) name:NSApplicationWillFinishLaunchingNotification object:NSApp];

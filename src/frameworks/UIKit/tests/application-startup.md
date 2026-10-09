@@ -1,31 +1,42 @@
-# UIApplicationMain startup fixture (drafted, never compiled or run)
+# UIApplicationMain startup fixture
 
-Run `application-startup` once per `UIAPP_FIXTURE_MODE`. The failure policy is a Darling
-host policy, not UIKit behaviour. Every failure mode expects exit status 1, exactly one
-stderr line `UIApplicationMain: <cause>`, and no `will`/`did` line.
+Run `application-startup` once per `UIAPP_FIXTURE_MODE` under a Wayland display. The failure
+policy is a Darling host policy, not UIKit behaviour: a failure exits 1 with exactly one stderr
+line `UIApplicationMain: <cause>`, and the run loop never starts.
 
 | Mode | Setup | Expected |
 | --- | --- | --- |
-| ok | default | `shared-before-launch-nil=1`, then `will 1 main=1 shared=1 state=1 opts=0`, `did 1 after-will=1 delegate-identity=1 class=UIApplication`, `state-active=1`, `state-inactive=1`, `timer`, `terminate will=1 did=1`; exit 0 |
-| custom-principal | principal FixtureApplication | same as ok, with `class=FixtureApplication` |
-| nil-delegate | no delegate class | loop runs; `nil-delegate shared=1 delegate-nil=1`; exit 0 |
-| bad-principal | principal NSObject | cause names the principal class |
-| bad-delegate | delegate does not conform | cause names the delegate class |
-| missing-delegate | unknown delegate name | cause names the delegate class |
-| throw-will / throw-did | delegate raises | `exception in willFinishLaunching` / `didFinishLaunching` |
-| duplicate | second call from did-finish | `already called` |
+| ok | default | `shared-before-launch-nil=1`, `will 1 main=1 shared=1 state=1 opts=0`, `did 1 after-will=1 delegate-identity=1 class=UIApplication`, `state-active=1`, `state-inactive=1`, `timer`, `terminate will=1 did=1`; exit 0 |
+| custom-principal | principal FixtureApplication | as ok, with `class=FixtureApplication` |
+| app-subclass | principal ShapeApplication (overrides `-init`), delegate ShapeDelegate (a UIResponder with did-finish and terminate only) | `shape did main=1 init=1 class=ShapeApplication shared=1 delegate-identity=1 delegate-class=ShapeDelegate state=1`, `shape terminate init=1`; exit 0 |
+| nil-delegate | no delegate class | `nil-delegate shared=1 delegate-nil=1`; exit 0 |
+| bad-principal | principal NSObject | cause names the principal class; no will/did |
+| bad-delegate, missing-delegate | delegate does not conform / unknown name | cause names the delegate class; no will/did |
+| throw-will | will-finish raises | `exception in willFinishLaunching`; no will/did line |
+| throw-did | did-finish raises | `will 1 ...`, then `exception in didFinishLaunching` |
+| duplicate | second call from did-finish | `will 1`, `did 1`, both state lines, then `already called` |
 | off-main | call on a secondary thread | `must be called on the main thread` |
-| run-loop-returns | timer calls `[NSApp stop:]` | `run loop returned` |
-| no display | invalid WAYLAND_DISPLAY | `no display` |
-| document argument | pass a non-dash argument | `document arguments are unsupported` |
-| splash | bundle contains a `splash` image | `unsupported splash image` |
-| UIMainStoryboardFile, UIApplicationSceneManifest, NSMainNibFile, CFBundleDocumentTypes | run inside a bundle whose Info.plist sets the key | `unsupported configured resource <key>` |
+| no-display | `WAYLAND_DISPLAY` names an absent socket | `screen query failed: NSWindowServerCommunicationException: ...` |
+| arguments | `docfile.txt`; `-AppleLanguages (en)` | as ok: arguments are not opened as documents |
+| bundle-control | inside a bundle with a plain Info.plist | as ok |
+| splash | bundle has `Resources/splash.png` | `unsupported splash image` |
+| bundle-NSMainNibFile, bundle-UIMainStoryboardFile | bundle Info.plist sets the key | `unsupported configured resource <key>` |
+| bundle-UIApplicationSceneManifest | bundle Info.plist sets the key | `UIKit: UIApplicationSceneManifest is not supported; launching without scene sessions`, then as ok |
+| bundle-CFBundleDocumentTypes | bundle Info.plist sets the key | as ok |
+| run-loop-returns | timer calls `[NSApp stop:]` | `run loop returned` (UNPROVEN, see below) |
 
-Fail-before: the base tree has no UIApplicationMain, so every mode fails to link.
-Deletion probes, one per policy branch: delete the check, rebuild, and the matching mode
-must then misbehave (start the loop, or exit with another status). A mode that still
-passes means the check is dead or the mode does not exercise it.
+Exceptions from the principal's or delegate's `-init` follow the same policy. Exceptions from
+`applicationWillTerminate:` happen after launch and are caught and logged by AppKit.
 
-The `will` BOOL NO return must not stop `did`. Native window and pixels are out of scope
-here; the AppKit-authored window fixture from FTServices covers them. The Cocotron
-`NSOpen` default is not read by this entry point and is a documented exclusion.
+## Limits
+
+- `run-loop-returns` is UNPROVEN: on the Wayland backend `-[NSApplication run]` does not return
+  after a timer-only `[NSApp stop:]` wakeup (VibeDarling/darling#1127), so the branch never runs.
+- `state-active`/`state-inactive` come from notifications the fixture posts itself. They show
+  that the bridge maps AppKit notifications to `applicationState`, not that the backend posts
+  them on real focus changes.
+- AppKit reads arguments from `/proc/self/cmdline`, not from the `argv` passed in, so the two can
+  differ.
+- Fail-before: the base tree has no `UIApplicationMain`, so every mode fails to link. The policy
+  branches are covered by deletion probes instead: delete one behaviour, rebuild, and its mode
+  must change.
