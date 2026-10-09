@@ -69,7 +69,7 @@ static inline BOOL UIOffsetEqualToOffset(UIOffset offset1, UIOffset offset2)
     return offset1.horizontal == offset2.horizontal && offset1.vertical == offset2.vertical;
 }
 
-// Moves the origin by left/top and shrinks the size by left+right / top+bottom, with no clamping.
+// No clamping: an over-inset rect gets a negative size.
 static inline CGRect UIEdgeInsetsInsetRect(CGRect rect, UIEdgeInsets insets)
 {
     rect.origin.x += insets.left;
