@@ -18,6 +18,9 @@ concurrency:
 
 env:
   SOURCE_REPO: VibeDarling/darling
+  # PILOT ONLY: darling-metal fails to configure on the default branches (mslc source list drift,
+  # darling-metal#28 / mslc#201). Remove once those land; the release is then built with Metal.
+  EXTRA_CMAKE_ARGS: -DENABLE_METAL=OFF
 
 jobs:
   prepare:
@@ -97,7 +100,7 @@ jobs:
         run: |
           ccache --max-size=3G
           cmake -S "$W/ws/source" -B "$W/ws/build" -G Ninja -DCMAKE_INSTALL_PREFIX=/usr/local \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache $EXTRA_CMAKE_ARGS
           cmake --build "$W/ws/build" --parallel "$(nproc)"
           # a clean first run can leave work pending after build-graph regeneration
           if ! ninja -C "$W/ws/build" -n | grep -qi "no work to do"; then
@@ -172,7 +175,7 @@ jobs:
             --fragments "${frags[@]}" --lock-dirs art/*/ $pre \
             --published-at "$(date -u +%FT%TZ)" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --builder "${{ github.repository }}@${{ github.sha }}" --out rel/manifest.json
+            --builder "${{ github.repository }}@${{ github.sha }}" --cmake-args "$EXTRA_CMAKE_ARGS" --out rel/manifest.json
           (cd rel && sha256sum *.tar.zst manifest.json refs.lock.json nested.refs.lock.json > SHA256SUMS)
           cat rel/manifest.json
 
@@ -188,5 +191,5 @@ jobs:
           pre=""; [ "${{ github.event_name == 'push' || inputs.prerelease }}" = "true" ] && pre="--prerelease"
           gh release create "$tag" rel/* --draft $pre --target "${{ github.sha }}" \
             --title "Darling runtime $tag" \
-            --notes "Built from ${{ env.SOURCE_REPO }} ${{ needs.prepare.outputs.sha }} (default branches, no PRs). Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo ${{ github.repository }}"
+            --notes "Built from ${{ env.SOURCE_REPO }} ${{ needs.prepare.outputs.sha }} (default branches, no PRs). Extra CMake args: ${{ env.EXTRA_CMAKE_ARGS }}. Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo ${{ github.repository }}"
           gh release edit "$tag" --draft=false

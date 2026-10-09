@@ -124,7 +124,7 @@ def merge(args):
         "published_at": args.published_at,
         "source": {"repo": args.repo, "sha": args.sha},
         "artifacts": artifacts, "locks": list(locks.values()),
-        "build": {"run_url": args.run_url, "builder": args.builder},
+        "build": {"run_url": args.run_url, "builder": args.builder, "cmake_args": args.cmake_args.split()},
     }
     Path(args.out).write_text(json.dumps(manifest, indent=2) + "\n")
 
@@ -144,6 +144,7 @@ def main():
     m.add_argument("--published-at", required=True)
     m.add_argument("--run-url", default="")
     m.add_argument("--builder", default="")
+    m.add_argument("--cmake-args", default="")
     args = parser.parse_args()
     {"fragment": fragment, "merge": merge}[args.cmd](args)
 
