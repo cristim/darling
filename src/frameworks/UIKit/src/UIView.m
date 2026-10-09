@@ -226,6 +226,111 @@
     return nil;
 }
 
+// A point in a view's bounds space maps to its superview by moving the bounds centre to the
+// origin, applying the transform (documented: it acts about the centre), then moving to
+// `center`. rung 6: the bounds origin entering through the bounds centre is the usual
+// scrolling behaviour and is not on the pages read.
+- (CGPoint)_pointToSuperview:(CGPoint)p
+{
+    CGPoint q = CGPointMake(p.x - (_bounds.origin.x + _bounds.size.width / 2),
+                            p.y - (_bounds.origin.y + _bounds.size.height / 2));
+    q = CGPointApplyAffineTransform(q, _transform);
+    return CGPointMake(q.x + _center.x, q.y + _center.y);
+}
+
+- (CGPoint)_pointFromSuperview:(CGPoint)p
+{
+    CGFloat det = _transform.a * _transform.d - _transform.b * _transform.c;
+    if (det == 0) {
+        [NSException raise:NSInvalidArgumentException format:@"cannot convert through a view whose transform is not invertible"];
+    }
+    CGPoint q = CGPointApplyAffineTransform(CGPointMake(p.x - _center.x, p.y - _center.y),
+                                            CGAffineTransformInvert(_transform));
+    return CGPointMake(q.x + _bounds.origin.x + _bounds.size.width / 2,
+                       q.y + _bounds.origin.y + _bounds.size.height / 2);
+}
+
+- (CGPoint)_pointInRoot:(CGPoint)p
+{
+    for (UIView *v = self; v->_superview; v = v->_superview) {
+        p = [v _pointToSuperview:p];
+    }
+    return p;
+}
+
+- (CGPoint)_pointFromRoot:(CGPoint)p
+{
+    NSMutableArray *chain = [NSMutableArray array];   // self first, root last
+    for (UIView *v = self; v->_superview; v = v->_superview) {
+        [chain addObject:v];
+    }
+    for (UIView *v in [chain reverseObjectEnumerator]) {
+        p = [v _pointFromSuperview:p];
+    }
+    return p;
+}
+
+- (UIView *)_rootView
+{
+    UIView *v = self;
+    while (v->_superview) v = v->_superview;
+    return v;
+}
+
+// rung 6: views in different hierarchies raise; the pages read do not cover the case.
+- (void)_requireSameRootAs:(UIView *)other
+{
+    if ([self _rootView] != [other _rootView]) {
+        [NSException raise:NSInvalidArgumentException format:@"views are not in the same view hierarchy"];
+    }
+}
+
+- (CGPoint)convertPoint:(CGPoint)point toView:(UIView *)view
+{
+    CGPoint inRoot = [self _pointInRoot:point];
+    if (!view) return inRoot;
+    [self _requireSameRootAs:view];
+    return [view _pointFromRoot:inRoot];
+}
+
+- (CGPoint)convertPoint:(CGPoint)point fromView:(UIView *)view
+{
+    if (!view) return [self _pointFromRoot:point];
+    [self _requireSameRootAs:view];
+    return [self _pointFromRoot:[view _pointInRoot:point]];
+}
+
+// rung 6: a rectangle converts to the bounding box of its four converted corners.
+static CGRect boundingRect(CGPoint corners[4])
+{
+    CGFloat minX = corners[0].x, maxX = minX, minY = corners[0].y, maxY = minY;
+    for (int i = 1; i < 4; i++) {
+        if (corners[i].x < minX) minX = corners[i].x;
+        if (corners[i].x > maxX) maxX = corners[i].x;
+        if (corners[i].y < minY) minY = corners[i].y;
+        if (corners[i].y > maxY) maxY = corners[i].y;
+    }
+    return CGRectMake(minX, minY, maxX - minX, maxY - minY);
+}
+
+- (CGRect)convertRect:(CGRect)rect toView:(UIView *)view
+{
+    CGFloat x1 = rect.origin.x, y1 = rect.origin.y;
+    CGFloat x2 = x1 + rect.size.width, y2 = y1 + rect.size.height;
+    CGPoint corners[4] = {{x1, y1}, {x2, y1}, {x2, y2}, {x1, y2}};
+    for (int i = 0; i < 4; i++) corners[i] = [self convertPoint:corners[i] toView:view];
+    return boundingRect(corners);
+}
+
+- (CGRect)convertRect:(CGRect)rect fromView:(UIView *)view
+{
+    CGFloat x1 = rect.origin.x, y1 = rect.origin.y;
+    CGFloat x2 = x1 + rect.size.width, y2 = y1 + rect.size.height;
+    CGPoint corners[4] = {{x1, y1}, {x2, y1}, {x2, y2}, {x1, y2}};
+    for (int i = 0; i < 4; i++) corners[i] = [self convertPoint:corners[i] fromView:view];
+    return boundingRect(corners);
+}
+
 // Documented: the default implementations do nothing.
 - (void)willMoveToSuperview:(UIView *)newSuperview {}
 - (void)didMoveToSuperview {}
