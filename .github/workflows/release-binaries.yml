@@ -264,8 +264,10 @@ jobs:
           PRERELEASE: ${{ github.event_name == 'push' || inputs.prerelease }}
           ALLOW_PARTIAL: ${{ inputs.allow_partial }}
         run: |
-          shopt -s nullglob
-          frags=(art/*/fragment-*.json)
+          frags=()
+          for arch in aarch64 x86_64; do
+            [ -f "art/runtime-$arch/fragment-$arch.json" ] && frags+=("$arch")
+          done
           pre="$PRERELEASE"
           if [ "${#frags[@]}" -ne 2 ]; then
             [ "$ALLOW_PARTIAL" = "true" ] || { echo "${#frags[@]} of 2 architectures built; re-run, or dispatch with allow_partial" >&2; exit 1; }
@@ -284,15 +286,18 @@ jobs:
           REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          shopt -s nullglob
-          frags=(art/*/fragment-*.json)
           mkdir rel
-          cp art/*/*.tar.zst art/*/runtime.manifest-*.json rel/
-          first=$(ls -d art/*/ | head -1)
-          cp "$first"refs.lock.json "$first"nested.refs.lock.json rel/
+          frags=(); dirs=()
+          for arch in aarch64 x86_64; do
+            d="art/runtime-$arch"
+            [ -d "$d" ] || continue
+            cp "$d/darling-runtime-$VERSION-linux-$arch.tar.zst" "$d/runtime.manifest-$arch.json" rel/
+            frags+=("$d/fragment-$arch.json"); dirs+=("$d")
+          done
+          cp "${dirs[0]}/refs.lock.json" "${dirs[0]}/nested.refs.lock.json" rel/
           python3 scripts/ci/package_runtime.py merge --version "$VERSION" \
             --repo "$REPO" --sha "$SRC_SHA" \
-            --fragments "${frags[@]}" --lock-dirs art/*/ $FLAG \
+            --fragments "${frags[@]}" --lock-dirs "${dirs[@]}" $FLAG \
             --published-at "$(date -u +%FT%TZ)" --run-url "$RUN_URL" \
             --builder "$REPO@$GITHUB_SHA" --cmake-args "$EXTRA_CMAKE_ARGS" \
             --recipe-sha "$RECIPE" --source-ref "$SOURCE_REF" --out rel/manifest.json
