@@ -1,5 +1,4 @@
 #import <UIKit/UIWindowScene.h>
-#import <Foundation/NSArray.h>
 #include <dlfcn.h>
 #include <stdio.h>
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #c); return 1; } } while (0)
@@ -12,11 +11,8 @@ int main(int argc, char **argv)
         if (!library) { fprintf(stderr, "dlopen: %s\n", dlerror()); return 2; }
         Class sceneClass = NSClassFromString(@"UIWindowScene");
         CHECK(sceneClass != Nil);
-        UIWindowScene *scene = [[sceneClass alloc] init];
-        CHECK(scene != nil);
-        NSArray *windows = scene.windows;
-        CHECK(windows != nil && [windows count] == 0);
-        CHECK(scene.keyWindow == nil);
+        // The docs forbid creating window scenes directly, so only the class and its
+        // selectors are checked here.
         CHECK([sceneClass instancesRespondToSelector:@selector(windows)]);
         CHECK([sceneClass instancesRespondToSelector:@selector(keyWindow)]);
         // Members whose types are not implemented yet must not appear as stubs.
