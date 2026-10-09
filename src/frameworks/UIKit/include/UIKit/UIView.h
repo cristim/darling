@@ -40,6 +40,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)exchangeSubviewAtIndex:(NSInteger)index1 withSubviewAtIndex:(NSInteger)index2;
 - (BOOL)isDescendantOfView:(UIView *)view;
 - (nullable __kindof UIView *)viewWithTag:(NSInteger)tag;
+// A nil view means the coordinate system of the top-most ancestor (there is no UIWindow yet).
+- (CGPoint)convertPoint:(CGPoint)point toView:(nullable UIView *)view;
+- (CGPoint)convertPoint:(CGPoint)point fromView:(nullable UIView *)view;
+- (CGRect)convertRect:(CGRect)rect toView:(nullable UIView *)view;
+- (CGRect)convertRect:(CGRect)rect fromView:(nullable UIView *)view;
 - (void)willMoveToSuperview:(nullable UIView *)newSuperview;
 - (void)didMoveToSuperview;
 - (void)didAddSubview:(UIView *)subview;
