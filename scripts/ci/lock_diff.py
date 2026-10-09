@@ -2,15 +2,19 @@
 """Compare the builder locks of two runs.
 
   lock_diff.py refresh-nested --builder SCRIPT --lock OLD_NESTED --output NEW_NESTED
-  lock_diff.py diff --old DIR --new DIR --markdown FILE [--force] [--github-output FILE]
+  lock_diff.py select-release --releases FILE
+  lock_diff.py recipe --extra ARGS FILE...
+  lock_diff.py diff --old DIR --new DIR --recipe SHA --markdown FILE [--force] [--github-output FILE]
 
-DIR holds refs.lock.json and nested.refs.lock.json. `diff` decides whether a build is needed
-(build=true/false) and writes the changed module SHAs as a markdown table.
+DIR holds refs.lock.json, nested.refs.lock.json and (old only) manifest.json. `diff` decides whether a
+build is needed (build=true/false) and writes the changed module SHAs as a markdown table.
 """
 import argparse
 import copy
+import hashlib
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -18,6 +22,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from package_runtime import comparable  # noqa: E402
 
 KINDS = ("refs", "nested.refs")
+ARCHES = {"aarch64", "x86_64"}
+RELEASE_TAG = re.compile(r"^v\d{4}\.\d{2}\.\d{2}-[0-9a-f]{7}(-r\d+)?$")
+BASELINE_ASSETS = {"refs.lock.json", "nested.refs.lock.json", "manifest.json"}
+
+
+def select_release(releases):
+    """Newest stable runtime release (not a draft, prerelease or v0.1.* changelog release) with the baseline assets."""
+    usable = [r for r in releases
+              if not r["draft"] and not r["prerelease"] and RELEASE_TAG.match(r["tag_name"])
+              and BASELINE_ASSETS <= {a["name"] for a in r["assets"]}]
+    return max(usable, key=lambda r: r["created_at"])["tag_name"] if usable else ""
+
+
+def recipe_hash(files, extra):
+    digest = hashlib.sha256(extra.encode())
+    for name in sorted(files):
+        digest.update(b"\0" + name.encode() + b"\0" + Path(name).read_bytes())
+    return digest.hexdigest()
+
+
+def select_release_cmd(args):
+    print(select_release(json.loads(Path(args.releases).read_text())))
+
+
+def recipe_cmd(args):
+    print(recipe_hash(args.files, args.extra))
 
 
 def load_builder(path):
@@ -40,7 +70,12 @@ def refresh_nested(args):
 
 def read(directory, kind):
     path = Path(directory, f"{kind}.lock.json")
-    return comparable(json.loads(path.read_text())) if path.is_file() else None
+    if not path.is_file():
+        return None
+    try:
+        return comparable(json.loads(path.read_text()))
+    except (ValueError, KeyError, TypeError) as error:
+        raise SystemExit(f"error: {path} is not a valid builder lock ({type(error).__name__}: {error})")
 
 
 def changes(old, new):
@@ -64,16 +99,29 @@ def markdown(rows, reason):
 
 
 def diff(args):
-    old = {k: read(args.old, k) for k in KINDS}
+    try:
+        old = {k: read(args.old, k) for k in KINDS}
+    except SystemExit:
+        if not args.force:
+            raise
+        old = {k: None for k in KINDS}
     new = {k: read(args.new, k) for k in KINDS}
     if any(v is None for v in new.values()):
         raise SystemExit("error: current locks are incomplete")
     first = any(v is None for v in old.values())
     rows = [] if first else [row for k in KINDS for row in changes(old[k], new[k])]
+    manifest_path = Path(args.old, "manifest.json")
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
+    recipe_changed = manifest.get("build", {}).get("recipe_sha256") != args.recipe
+    arches_missing = ARCHES - set(manifest.get("artifacts", {}))
     if first:
         reason, build = "No previous release locks: first build.", True
     elif rows:
         reason, build = f"{len(rows)} module(s) changed since the previous release.", True
+    elif recipe_changed:
+        reason, build = "The build recipe (workflow, scripts or CMake arguments) changed since the previous release.", True
+    elif arches_missing:
+        reason, build = f"The previous release lacks {', '.join(sorted(arches_missing))}.", True
     elif args.force:
         reason, build = "Nothing changed since the previous release; build forced.", True
     else:
@@ -94,9 +142,13 @@ def main():
     d = sub.add_parser("diff")
     d.add_argument("--old", required=True); d.add_argument("--new", required=True)
     d.add_argument("--markdown", required=True); d.add_argument("--force", action="store_true")
+    d.add_argument("--recipe", required=True)
+    sr = sub.add_parser("select-release"); sr.add_argument("--releases", required=True)
+    rc = sub.add_parser("recipe"); rc.add_argument("--extra", default=""); rc.add_argument("files", nargs="+")
     d.add_argument("--github-output")
     args = parser.parse_args()
-    {"refresh-nested": refresh_nested, "diff": diff}[args.cmd](args)
+    {"refresh-nested": refresh_nested, "diff": diff, "select-release": select_release_cmd,
+     "recipe": recipe_cmd}[args.cmd](args)
 
 
 if __name__ == "__main__":

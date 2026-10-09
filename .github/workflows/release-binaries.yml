@@ -39,9 +39,8 @@ jobs:
       sha: ${{ steps.v.outputs.sha }}
       version: ${{ steps.v.outputs.version }}
       build: ${{ steps.diff.outputs.build }}
+      recipe: ${{ steps.diff.outputs.recipe }}
     env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
       FORCE: ${{ github.event_name == 'push' || inputs.force }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -56,12 +55,18 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "version=v$(date -u +%Y.%m.%d)-${sha:0:7}" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch the locks of the previous release
+      - name: Fetch the locks and manifest of the previous runtime release
+        continue-on-error: ${{ env.FORCE == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           mkdir prev cur
-          tag=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // empty')
-          echo "previous release: ${tag:-none}"
-          [ -z "$tag" ] || gh release download "$tag" --dir prev --pattern refs.lock.json --pattern nested.refs.lock.json
+          gh api "repos/${GH_REPO}/releases?per_page=100" > releases.json
+          tag=$(python3 ci/scripts/ci/lock_diff.py select-release --releases releases.json)
+          echo "previous runtime release: ${tag:-none}"
+          [ -z "$tag" ] || gh release download "$tag" --dir prev \
+            --pattern refs.lock.json --pattern nested.refs.lock.json --pattern manifest.json
 
       - name: Lock the current default-branch heads
         run: |
@@ -78,7 +83,10 @@ jobs:
         id: diff
         run: |
           force=""; [ "$FORCE" = "true" ] && force="--force"
-          python3 ci/scripts/ci/lock_diff.py diff --old prev --new cur --markdown cur/changes.md \
+          recipe=$(python3 ci/scripts/ci/lock_diff.py recipe "--extra=$EXTRA_CMAKE_ARGS" \
+            ci/.github/workflows/release-binaries.yml ci/scripts/ci/*.py ci/tools/all-vibedarling-pr-prefix.py)
+          echo "recipe=$recipe" >> "$GITHUB_OUTPUT"
+          python3 ci/scripts/ci/lock_diff.py diff --old prev --new cur --recipe "$recipe" --markdown cur/changes.md \
             --github-output "$GITHUB_OUTPUT" $force
           cat cur/changes.md
 
@@ -227,7 +235,8 @@ jobs:
             --fragments "${frags[@]}" --lock-dirs art/*/ $pre \
             --published-at "$(date -u +%FT%TZ)" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --builder "${{ github.repository }}@${{ github.sha }}" --cmake-args "$EXTRA_CMAKE_ARGS" --out rel/manifest.json
+            --builder "${{ github.repository }}@${{ github.sha }}" --cmake-args "$EXTRA_CMAKE_ARGS" \
+            --recipe-sha "${{ needs.prepare.outputs.recipe }}" --out rel/manifest.json
           (cd rel && sha256sum *.tar.zst manifest.json refs.lock.json nested.refs.lock.json > SHA256SUMS)
           cat rel/manifest.json
 

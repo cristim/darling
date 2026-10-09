@@ -27,9 +27,12 @@ class Diff(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def write(self, name, refs, nest):
+    def write(self, name, refs, nest, recipe="r1", arches=("aarch64", "x86_64")):
         d = self.root / name
         d.mkdir(exist_ok=True)
+        if name == "old":
+            (d / "manifest.json").write_text(json.dumps(
+                {"build": {"recipe_sha256": recipe}, "artifacts": {a: {} for a in arches}}))
         (d / "refs.lock.json").write_text(json.dumps(refs))
         (d / "nested.refs.lock.json").write_text(json.dumps(nest))
 
@@ -37,7 +40,7 @@ class Diff(unittest.TestCase):
         out = self.root / "gh-output"
         md = self.root / "changes.md"
         cmd = [sys.executable, str(HELPER), "diff", "--old", str(self.root / old), "--new", str(self.root / "new"),
-               "--markdown", str(md), "--github-output", str(out)] + (["--force"] if force else [])
+               "--markdown", str(md), "--github-output", str(out), "--recipe", "r1"] + (["--force"] if force else [])
         subprocess.run(cmd, check=True, capture_output=True)
         return out.read_text().strip(), md.read_text()
 
@@ -80,6 +83,55 @@ class Diff(unittest.TestCase):
         self.write("new", grown, nested(A, B))
         self.assertIn(f"| darling-new | main | (none) | {C[:12]} |", self.run_diff("old")[1])
 
+    def test_recipe_change_builds(self):
+        self.write("old", top(A, B), nested(A, B), recipe="other")
+        self.write("new", top(A, B), nested(A, B))
+        build, md = self.run_diff("old")
+        self.assertEqual(build, "build=true")
+        self.assertIn("recipe", md)
+
+    def test_old_release_without_recipe_builds(self):
+        self.write("old", top(A, B), nested(A, B))
+        (self.root / "old" / "manifest.json").write_text(json.dumps({"artifacts": {"aarch64": {}, "x86_64": {}}}))
+        self.write("new", top(A, B), nested(A, B))
+        self.assertEqual(self.run_diff("old")[0], "build=true")
+
+    def test_partial_previous_release_builds(self):
+        self.write("old", top(A, B), nested(A, B), arches=("aarch64",))
+        self.write("new", top(A, B), nested(A, B))
+        build, md = self.run_diff("old")
+        self.assertEqual(build, "build=true")
+        self.assertIn("lacks x86_64", md)
+
+    def run_raw(self, force=False):
+        cmd = [sys.executable, str(HELPER), "diff", "--old", str(self.root / "old"), "--new", str(self.root / "new"),
+               "--markdown", str(self.root / "c.md"), "--github-output", str(self.root / "o"), "--recipe", "r1"]
+        return subprocess.run(cmd + (["--force"] if force else []), capture_output=True, text=True)
+
+    def test_malformed_previous_lock_fails_clearly(self):
+        self.write("old", top(A, B), nested(A, B))
+        self.write("new", top(A, B), nested(A, B))
+        (self.root / "old" / "refs.lock.json").write_text("{not json")
+        got = self.run_raw()
+        self.assertNotEqual(got.returncode, 0)
+        self.assertIn("is not a valid builder lock", got.stderr)
+        self.assertNotIn("Traceback", got.stderr)
+
+    def test_wrong_shape_previous_lock_fails_clearly(self):
+        self.write("old", top(A, B), nested(A, B))
+        self.write("new", top(A, B), nested(A, B))
+        (self.root / "old" / "nested.refs.lock.json").write_text('{"x": 1}')
+        got = self.run_raw()
+        self.assertIn("is not a valid builder lock", got.stderr)
+        self.assertNotIn("Traceback", got.stderr)
+
+    def test_force_ignores_malformed_previous_lock(self):
+        self.write("old", top(A, B), nested(A, B))
+        self.write("new", top(A, B), nested(A, B))
+        (self.root / "old" / "refs.lock.json").write_text("{not json")
+        self.assertEqual(self.run_raw(force=True).returncode, 0)
+        self.assertEqual((self.root / "o").read_text().strip(), "build=true")
+
     def test_refresh_nested_updates_branch_heads_only(self):
         builder = self.root / "builder.py"
         builder.write_text(f"def remote_refs(item):\n    item['base'] = {C!r}\n    return item\n")
@@ -89,6 +141,59 @@ class Diff(unittest.TestCase):
         lock = json.loads((self.root / "cur.json").read_text())
         self.assertEqual(lock["vibedarling"][0]["base"], C)
         self.assertEqual(lock["external_pinned"], nested(A, B)["external_pinned"])
+
+
+def release(tag, created, draft=False, prerelease=False, assets=("refs.lock.json", "nested.refs.lock.json", "manifest.json")):
+    return {"tag_name": tag, "draft": draft, "prerelease": prerelease, "created_at": created, "assets": [{"name": a} for a in assets]}
+
+
+class Select(unittest.TestCase):
+    def pick(self, releases):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "releases.json")
+            path.write_text(json.dumps(releases))
+            return subprocess.run([sys.executable, str(HELPER), "select-release", "--releases", str(path)],
+                                  check=True, capture_output=True, text=True).stdout.strip()
+
+    def test_skips_changelog_releases(self):
+        got = self.pick([release("v0.1.20260921", "2026-09-21", assets=()),
+                         release("v2026.10.08-abcdef1", "2026-10-08")])
+        self.assertEqual(got, "v2026.10.08-abcdef1")
+
+    def test_skips_drafts_and_releases_missing_assets(self):
+        got = self.pick([release("v2026.10.09-abcdef1", "2026-10-09", draft=True),
+                         release("v2026.10.08-abcdef1", "2026-10-08", assets=("refs.lock.json",)),
+                         release("v2026.10.07-abcdef1", "2026-10-07")])
+        self.assertEqual(got, "v2026.10.07-abcdef1")
+
+    def test_skips_prereleases(self):
+        got = self.pick([release("v2026.10.09-abcdef1", "2026-10-09", prerelease=True),
+                         release("v2026.10.08-abcdef1", "2026-10-08")])
+        self.assertEqual(got, "v2026.10.08-abcdef1")
+
+    def test_newest_wins_and_rebuild_suffix_accepted(self):
+        got = self.pick([release("v2026.10.09-abcdef1", "2026-10-09T01:00:00Z"),
+                         release("v2026.10.09-abcdef1-r2", "2026-10-09T05:00:00Z")])
+        self.assertEqual(got, "v2026.10.09-abcdef1-r2")
+
+    def test_none_is_empty(self):
+        self.assertEqual(self.pick([release("v0.1.20260921", "2026-09-21")]), "")
+        self.assertEqual(self.pick([]), "")
+
+
+class Recipe(unittest.TestCase):
+    def test_hash_depends_on_content_and_extra(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp, "w.yml")
+            f.write_text("a")
+            def run(extra):
+                return subprocess.run([sys.executable, str(HELPER), "recipe", f"--extra={extra}", str(f)],
+                                      check=True, capture_output=True, text=True).stdout
+            first = run("")
+            self.assertEqual(first, run(""))
+            self.assertNotEqual(first, run("-DX=1"))
+            f.write_text("b")
+            self.assertNotEqual(first, run(""))
 
 
 if __name__ == "__main__":
