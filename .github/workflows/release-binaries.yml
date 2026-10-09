@@ -24,7 +24,7 @@ permissions: {}
 
 concurrency:
   group: release-binaries-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
   SOURCE_REPO: VibeDarling/darling
@@ -36,6 +36,7 @@ env:
 
 jobs:
   prepare:
+    if: ${{ github.event_name != 'schedule' || github.repository == 'VibeDarling/darling' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
