@@ -274,7 +274,7 @@ jobs:
 
   notify-failure:
     needs: [prepare, build, publish]
-    if: ${{ always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure') }}
+    if: ${{ !cancelled() && github.event_name == 'schedule' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
     runs-on: ubuntu-24.04
     permissions:
       issues: write
@@ -297,11 +297,12 @@ jobs:
           {
             echo "Scheduled run $RUN_URL failed ($RESULTS)."
             echo
-            echo "Modules changed since the last green build (the latest release):"
+            echo "Modules changed since the last green build (the latest stable runtime release):"
             echo
             if [ -f diff/changes.md ]; then cat diff/changes.md; else echo "Not available: the prepare job did not finish."; fi
           } > body.md
-          number=$(gh issue list --state open --limit 100 --json number,title \
+          number=$(gh issue list --state open --author app/github-actions --limit 1000 \
+            --search "in:title \"$ISSUE_TITLE\"" --json number,title \
             | jq -r --arg t "$ISSUE_TITLE" '[.[] | select(.title == $t)][0].number // empty')
           if [ -n "$number" ]; then
             gh issue comment "$number" --body-file body.md
