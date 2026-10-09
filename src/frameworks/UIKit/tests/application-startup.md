@@ -7,7 +7,6 @@ line `UIApplicationMain: <cause>`, and the run loop never starts.
 | Mode | Setup | Expected |
 | --- | --- | --- |
 | ok | default | `shared-before-launch-nil=1`, `will 1 main=1 shared=1 state=1 opts=0`, `did 1 after-will=1 delegate-identity=1 class=UIApplication`, `state-active=1`, `state-inactive=1`, `timer`, `terminate will=1 did=1`; exit 0 |
-| custom-principal | principal FixtureApplication | as ok, with `class=FixtureApplication` |
 | app-subclass | principal ShapeApplication (overrides `-init`), delegate ShapeDelegate (a UIResponder with did-finish and terminate only) | `shape did main=1 init=1 class=ShapeApplication shared=1 delegate-identity=1 delegate-class=ShapeDelegate state=1`, `shape terminate init=1`; exit 0 |
 | nil-delegate | no delegate class | `nil-delegate shared=1 delegate-nil=1`; exit 0 |
 | bad-principal | principal NSObject | cause names the principal class; no will/did |
@@ -31,13 +30,10 @@ Exceptions from
 
 ## Limits
 
-- `run-loop-returns` is UNPROVEN: on the Wayland backend `-[NSApplication run]` does not return
-  after a timer-only `[NSApp stop:]` wakeup (VibeDarling/darling#1127), so the branch never runs.
-- `state-active`/`state-inactive` come from notifications the fixture posts itself. They show
-  that the bridge maps AppKit notifications to `applicationState`, not that the backend posts
-  them on real focus changes.
-- AppKit reads arguments from `/proc/self/cmdline`, not from the `argv` passed in, so the two can
-  differ.
-- Fail-before: the base tree has no `UIApplicationMain`, so every mode fails to link. The policy
-  branches are covered by deletion probes instead: delete one behaviour, rebuild, and its mode
-  must change.
+- `run-loop-returns` is UNPROVEN: on Wayland `-[NSApplication run]` does not return after a
+  timer-only `[NSApp stop:]` wakeup (VibeDarling/darling#1127), so the branch never runs.
+- The state lines follow notifications the fixture posts itself: they prove the bridge mapping,
+  not that the backend posts them on real focus changes.
+- AppKit reads arguments from `/proc/self/cmdline`, not the `argv` passed in.
+- Fail-before is a link failure (the base tree has no `UIApplicationMain`); deletion probes
+  cover each policy branch instead.

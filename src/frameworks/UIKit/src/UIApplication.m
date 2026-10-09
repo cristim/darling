@@ -57,22 +57,16 @@ static void guarded(NSString *phase, void (^body)(void))
 // Delegate BOOL results report whether launch options were handled; they are not a startup verdict.
 - (void)willFinishLaunching:(NSNotification *)note
 {
-    id<UIApplicationDelegate> delegate = sharedApplication.delegate;
-    if ([delegate respondsToSelector:@selector(application:willFinishLaunchingWithOptions:)]) {
-        guarded(@"willFinishLaunching", ^{
-            [delegate application:sharedApplication willFinishLaunchingWithOptions:@{}];
-        });
-    }
+    id<UIApplicationDelegate> d = sharedApplication.delegate;
+    if ([d respondsToSelector:@selector(application:willFinishLaunchingWithOptions:)])
+        guarded(@"willFinishLaunching", ^{ [d application:sharedApplication willFinishLaunchingWithOptions:@{}]; });
 }
 
 - (void)didFinishLaunching:(NSNotification *)note
 {
-    id<UIApplicationDelegate> delegate = sharedApplication.delegate;
-    if ([delegate respondsToSelector:@selector(application:didFinishLaunchingWithOptions:)]) {
-        guarded(@"didFinishLaunching", ^{
-            [delegate application:sharedApplication didFinishLaunchingWithOptions:@{}];
-        });
-    }
+    id<UIApplicationDelegate> d = sharedApplication.delegate;
+    if ([d respondsToSelector:@selector(application:didFinishLaunchingWithOptions:)])
+        guarded(@"didFinishLaunching", ^{ [d application:sharedApplication didFinishLaunchingWithOptions:@{}]; });
 }
 
 - (void)didBecomeActive:(NSNotification *)note

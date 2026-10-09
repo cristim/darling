@@ -12,11 +12,7 @@ static const char *mode;
 static int willCount, didCount;
 static int savedArgc;
 static char **savedArgv;
-
-@interface FixtureApplication : UIApplication
-@end
-@implementation FixtureApplication
-@end
+static NSString *savedDelegate;
 
 // Same shape as an app that names its own UIApplication subclass and a UIResponder-based
 // delegate that implements only some optional callbacks.
@@ -41,12 +37,8 @@ static int shapeInitCount;
             [NSThread isMainThread], shapeInitCount, class_getName([a class]),
             a == [ShapeApplication sharedApplication] && a == [UIApplication sharedApplication],
             a.delegate == self, class_getName([(id)a.delegate class]), (long)a.applicationState);
-    [NSTimer scheduledTimerWithTimeInterval:0.2 target:self selector:@selector(fire:) userInfo:nil repeats:NO];
+    [NSApp performSelector:@selector(terminate:) withObject:nil afterDelay:0.2];
     return YES;
-}
-- (void)fire:(NSTimer *)t
-{
-    [NSApp terminate:nil];
 }
 - (void)applicationWillTerminate:(UIApplication *)a
 {
@@ -57,11 +49,7 @@ static int shapeInitCount;
 @interface ThrowingApplication : UIApplication
 @end
 @implementation ThrowingApplication
-- (instancetype)init
-{
-    [NSException raise:@"Fixture" format:@"init"];
-    return nil;
-}
+- (instancetype)init { [NSException raise:@"Fixture" format:@"init"]; return nil; }
 @end
 
 @interface NotADelegate : NSObject
@@ -111,8 +99,6 @@ static int shapeInitCount;
 }
 @end
 
-static NSString *savedDelegate;
-
 @interface Helper : NSObject
 @end
 @implementation Helper
@@ -134,7 +120,6 @@ int main(int argc, char **argv)
         if (!strcmp(mode, "bad-principal")) principal = @"NSObject";
         if (!strcmp(mode, "bad-delegate")) delegate = @"NotADelegate";
         if (!strcmp(mode, "missing-delegate")) delegate = @"NoSuchClass";
-        if (!strcmp(mode, "custom-principal")) principal = @"FixtureApplication";
         if (!strcmp(mode, "nil-delegate")) delegate = nil;
         if (!strcmp(mode, "throw-init")) principal = @"ThrowingApplication";
         if (!strcmp(mode, "app-subclass")) {
