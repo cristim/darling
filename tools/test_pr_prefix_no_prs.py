@@ -54,5 +54,36 @@ class NoPrsResolveTests(unittest.TestCase):
         self.assertEqual([p["number"] for p in lock["repos"][0]["prs"]], [7])
 
 
+class NoPrsResolveNestedTests(unittest.TestCase):
+    def resolve_nested(self, no_prs):
+        occurrence = {"parent": "src/external/a", "path": "sub", "repo": "inner",
+                      "url": "https://github.com/VibeDarling/inner.git",
+                      "kind": "VibeDarling", "pin": BASE}
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            workspace.mkdir()
+            (workspace / "integrated.json").write_text("{}\n")
+            (workspace / "refs.lock.json").write_text(json.dumps(
+                {"repos": [{"repo": "darling"}], "excluded_open_prs": []}))
+            out = Path(tmp) / "nested.lock.json"
+            args = SimpleNamespace(workspace=str(workspace), output=str(out), jobs=1, no_prs=no_prs)
+            pr = {**PR, "repository_url": "https://api.github.com/repos/VibeDarling/inner"}
+            with patch.object(b, "nested_modules", return_value=[occurrence]), \
+                    patch.object(b, "remote_refs", side_effect=locked), \
+                    patch.object(b, "open_prs", return_value=[pr]) as prs:
+                b.resolve_nested(args)
+            return json.loads(out.read_text()), prs
+
+    def test_no_prs_skips_the_pr_search_entirely(self):
+        lock, prs = self.resolve_nested(True)
+        prs.assert_not_called()
+        self.assertEqual(lock["vibedarling"][0]["prs"], [])
+
+    def test_default_still_locks_open_prs(self):
+        lock, prs = self.resolve_nested(False)
+        prs.assert_called_once()
+        self.assertEqual([p["number"] for p in lock["vibedarling"][0]["prs"]], [7])
+
+
 if __name__ == "__main__":
     unittest.main()
