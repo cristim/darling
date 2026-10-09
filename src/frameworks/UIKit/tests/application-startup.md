@@ -13,6 +13,7 @@ line `UIApplicationMain: <cause>`, and the run loop never starts.
 | bad-principal | principal NSObject | cause names the principal class; no will/did |
 | bad-delegate, missing-delegate | delegate does not conform / unknown name | cause names the delegate class; no will/did |
 | throw-will | will-finish raises | `exception in willFinishLaunching`; no will/did line |
+| throw-init | principal `-init` raises | `exception in application or delegate init`; no will/did |
 | throw-did | did-finish raises | `will 1 ...`, then `exception in didFinishLaunching` |
 | duplicate | second call from did-finish | `will 1`, `did 1`, both state lines, then `already called` |
 | off-main | call on a secondary thread | `must be called on the main thread` |
@@ -25,7 +26,7 @@ line `UIApplicationMain: <cause>`, and the run loop never starts.
 | bundle-CFBundleDocumentTypes | bundle Info.plist sets the key | as ok |
 | run-loop-returns | timer calls `[NSApp stop:]` | `run loop returned` (UNPROVEN, see below) |
 
-Exceptions from the principal's or delegate's `-init` follow the same policy. Exceptions from
+Exceptions from
 `applicationWillTerminate:` happen after launch and are caught and logged by AppKit.
 
 ## Limits

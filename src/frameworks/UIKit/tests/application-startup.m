@@ -54,6 +54,16 @@ static int shapeInitCount;
 }
 @end
 
+@interface ThrowingApplication : UIApplication
+@end
+@implementation ThrowingApplication
+- (instancetype)init
+{
+    [NSException raise:@"Fixture" format:@"init"];
+    return nil;
+}
+@end
+
 @interface NotADelegate : NSObject
 @end
 @implementation NotADelegate
@@ -126,6 +136,7 @@ int main(int argc, char **argv)
         if (!strcmp(mode, "missing-delegate")) delegate = @"NoSuchClass";
         if (!strcmp(mode, "custom-principal")) principal = @"FixtureApplication";
         if (!strcmp(mode, "nil-delegate")) delegate = nil;
+        if (!strcmp(mode, "throw-init")) principal = @"ThrowingApplication";
         if (!strcmp(mode, "app-subclass")) {
             principal = @"ShapeApplication";
             delegate = @"ShapeDelegate";
