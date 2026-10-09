@@ -7,3 +7,4 @@
 #import <UIKit/UISceneConfiguration.h>
 #import <UIKit/UIResponder.h>
 #import <UIKit/UIKeyboardNotifications.h>
+#import <UIKit/UIDevice.h>
