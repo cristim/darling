@@ -49,11 +49,18 @@ jobs:
           persist-credentials: false
 
       - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           sha=$(git ls-remote "https://github.com/${SOURCE_REPO}.git" HEAD | cut -f1)
-          [ -n "$sha" ] || { echo "cannot resolve $SOURCE_REPO HEAD" >&2; exit 1; }
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "cannot resolve $SOURCE_REPO HEAD: '$sha'" >&2; exit 1; }
+          base="v$(date -u +%Y.%m.%d)-${sha:0:7}"
+          tag="$base"; n=2
+          while out=$(gh release view "$tag" 2>&1); do tag="$base-r$n"; n=$((n+1)); done
+          case "$out" in *"release not found"*) ;; *) echo "cannot check release $tag: $out" >&2; exit 1;; esac
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "version=v$(date -u +%Y.%m.%d)-${sha:0:7}" >> "$GITHUB_OUTPUT"
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Fetch the locks and manifest of the previous runtime release
         continue-on-error: ${{ env.FORCE == 'true' }}
@@ -208,18 +215,6 @@ jobs:
           pattern: runtime-*
           path: art
 
-      - name: Choose the release tag
-        id: tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="${{ needs.prepare.outputs.version }}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            n=2; while gh release view "$tag-r$n" >/dev/null 2>&1; do n=$((n+1)); done
-            tag="$tag-r$n"
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
       - name: Build manifest and checksums
         run: |
           shopt -s nullglob
@@ -230,7 +225,7 @@ jobs:
           first=$(ls -d art/*/ | head -1)
           cp "$first"refs.lock.json "$first"nested.refs.lock.json rel/
           pre=""; [ "${{ github.event_name == 'push' || inputs.prerelease }}" = "true" ] && pre="--prerelease"
-          python3 scripts/ci/package_runtime.py merge --version "${{ steps.tag.outputs.tag }}" \
+          python3 scripts/ci/package_runtime.py merge --version "${{ needs.prepare.outputs.version }}" \
             --repo "${{ github.repository }}" --sha "${{ needs.prepare.outputs.sha }}" \
             --fragments "${frags[@]}" --lock-dirs art/*/ $pre \
             --published-at "$(date -u +%FT%TZ)" \
@@ -248,7 +243,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="${{ steps.tag.outputs.tag }}"
+          tag="${{ needs.prepare.outputs.version }}"
           pre=""; [ "${{ github.event_name == 'push' || inputs.prerelease }}" = "true" ] && pre="--prerelease"
           gh release create "$tag" rel/* --draft $pre --target "${{ github.sha }}" \
             --title "Darling runtime $tag" \
