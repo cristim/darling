@@ -126,6 +126,8 @@ def merge(args):
         "artifacts": artifacts, "locks": list(locks.values()),
         "build": {"run_url": args.run_url, "builder": args.builder, "cmake_args": args.cmake_args.split(),
                   "recipe_sha256": args.recipe_sha},
+        "attestation": {"signer_workflow": f"{args.repo}/.github/workflows/release-binaries.yml",
+                        "source_ref": args.source_ref, "deny_self_hosted_runners": True},
     }
     Path(args.out).write_text(json.dumps(manifest, indent=2) + "\n")
 
@@ -147,6 +149,7 @@ def main():
     m.add_argument("--builder", default="")
     m.add_argument("--cmake-args", default="")
     m.add_argument("--recipe-sha", required=True)
+    m.add_argument("--source-ref", required=True)
     args = parser.parse_args()
     {"fragment": fragment, "merge": merge}[args.cmd](args)
 

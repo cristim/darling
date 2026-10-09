@@ -17,8 +17,10 @@ on:
         description: Publish a prerelease even if one architecture failed
         type: boolean
         default: false
+  # ---- PILOT ONLY: delete this block; the VibeDarling workflow has no push trigger ----
   push:
     branches: [ci/prebuilt-release]
+  # ---- end PILOT ONLY ----
 
 permissions: {}
 
@@ -52,6 +54,13 @@ jobs:
         with:
           path: ci
           persist-credentials: false
+
+      - name: Refuse releases from other repositories or refs
+        run: |
+          [ "$GITHUB_REPOSITORY" = VibeDarling/darling ] && [ "$GITHUB_REF" = refs/heads/master ] || [ -n "$EXTRA_CMAKE_ARGS" ] || {
+            echo "releases are built only from refs/heads/master of VibeDarling/darling (or by the PILOT block)" >&2
+            exit 1
+          }
 
       - name: Refuse pilot flags on a stable release
         env:
@@ -216,6 +225,13 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - name: Refuse releases from other repositories or refs
+        run: |
+          [ "$GITHUB_REPOSITORY" = VibeDarling/darling ] && [ "$GITHUB_REF" = refs/heads/master ] || [ -n "$EXTRA_CMAKE_ARGS" ] || {
+            echo "releases are built only from refs/heads/master of VibeDarling/darling (or by the PILOT block)" >&2
+            exit 1
+          }
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
@@ -255,7 +271,7 @@ jobs:
             --published-at "$(date -u +%FT%TZ)" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --builder "${{ github.repository }}@${{ github.sha }}" --cmake-args "$EXTRA_CMAKE_ARGS" \
-            --recipe-sha "${{ needs.prepare.outputs.recipe }}" --out rel/manifest.json
+            --recipe-sha "${{ needs.prepare.outputs.recipe }}" --source-ref "${{ github.ref }}" --out rel/manifest.json
           (cd rel && sha256sum *.tar.zst runtime.manifest-*.json manifest.json refs.lock.json nested.refs.lock.json > SHA256SUMS)
           cat rel/manifest.json
 
@@ -270,7 +286,7 @@ jobs:
           tag="${{ needs.prepare.outputs.version }}"
           gh release create "$tag" rel/* --draft ${{ steps.kind.outputs.flag }} --target "${{ github.sha }}" \
             --title "Darling runtime $tag" \
-            --notes "Built from ${{ env.SOURCE_REPO }} ${{ needs.prepare.outputs.sha }} (default or declared branches, no PRs). Extra CMake args: ${{ env.EXTRA_CMAKE_ARGS }}. Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo ${{ github.repository }}"
+            --notes "Built from ${{ env.SOURCE_REPO }} ${{ needs.prepare.outputs.sha }} (default or declared branches, no PRs). Extra CMake args: ${{ env.EXTRA_CMAKE_ARGS }}. Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo ${{ github.repository }} --signer-workflow ${{ github.repository }}/.github/workflows/release-binaries.yml --source-ref ${{ github.ref }} --deny-self-hosted-runners"
           gh release edit "$tag" --draft=false
 
   notify-failure:
