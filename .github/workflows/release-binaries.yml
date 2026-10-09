@@ -20,7 +20,9 @@ env:
   SOURCE_REPO: VibeDarling/darling
   # PILOT ONLY: darling-metal fails to configure on the default branches (mslc source list drift,
   # darling-metal#28 / mslc#201). Remove once those land; the release is then built with Metal.
-  EXTRA_CMAKE_ARGS: -DENABLE_METAL=OFF
+  # The -I is needed only while Metal is off: MTLDevice.mm includes <mslc/mslc.h> outside its
+  # DARLING_METAL_ENABLED guard, and the include dir is added only when Metal is on.
+  EXTRA_CMAKE_ARGS: -DENABLE_METAL=OFF -DCMAKE_CXX_FLAGS=-I/mnt/darling-work/ws/source/src/external/metal/deps/mslc/include
 
 jobs:
   prepare:
