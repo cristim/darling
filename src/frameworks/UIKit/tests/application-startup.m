@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Mode comes from UIAPP_FIXTURE_MODE (see application-startup.md). Not yet compiled.
+// Mode comes from UIAPP_FIXTURE_MODE (see application-startup.md).
 #import <UIKit/UIApplication.h>
 #import <AppKit/NSApplication.h>
 #import <Foundation/Foundation.h>
-#import <AppKit/NSApplication.h>
 #include <objc/runtime.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +14,42 @@ static int willCount, didCount;
 @interface FixtureApplication : UIApplication
 @end
 @implementation FixtureApplication
+@end
+
+// Same shape as an app that names its own UIApplication subclass and a UIResponder-based
+// delegate that implements only some optional callbacks.
+static int shapeInitCount;
+
+@interface ShapeApplication : UIApplication
+@end
+@implementation ShapeApplication
+- (instancetype)init
+{
+    if ((self = [super init])) shapeInitCount++;
+    return self;
+}
+@end
+
+@interface ShapeDelegate : UIResponder <UIApplicationDelegate>
+@end
+@implementation ShapeDelegate
+- (BOOL)application:(UIApplication *)a didFinishLaunchingWithOptions:(NSDictionary *)o
+{
+    fprintf(stderr, "shape did main=%d init=%d class=%s shared=%d delegate-identity=%d delegate-class=%s state=%ld\n",
+            [NSThread isMainThread], shapeInitCount, class_getName([a class]),
+            a == [ShapeApplication sharedApplication] && a == [UIApplication sharedApplication],
+            a.delegate == self, class_getName([(id)a.delegate class]), (long)a.applicationState);
+    [NSTimer scheduledTimerWithTimeInterval:0.2 target:self selector:@selector(fire:) userInfo:nil repeats:NO];
+    return YES;
+}
+- (void)fire:(NSTimer *)t
+{
+    [NSApp terminate:nil];
+}
+- (void)applicationWillTerminate:(UIApplication *)a
+{
+    fprintf(stderr, "shape terminate init=%d\n", shapeInitCount);
+}
 @end
 
 @interface NotADelegate : NSObject
@@ -54,8 +89,6 @@ static int willCount, didCount;
     fprintf(stderr, "timer\n");
     if (!strcmp(mode, "run-loop-returns")) {
         [NSApp stop:nil];
-        // stop: only clears the flag; the loop re-checks it after the next event.
-        [NSApp postEvent:[NSEvent otherEventWithType:NSApplicationDefined location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:YES];
     } else {
         [NSApp terminate:nil];
     }
@@ -93,6 +126,10 @@ int main(int argc, char **argv)
         if (!strcmp(mode, "missing-delegate")) delegate = @"NoSuchClass";
         if (!strcmp(mode, "custom-principal")) principal = @"FixtureApplication";
         if (!strcmp(mode, "nil-delegate")) delegate = nil;
+        if (!strcmp(mode, "app-subclass")) {
+            principal = @"ShapeApplication";
+            delegate = @"ShapeDelegate";
+        }
         savedArgc = argc;
         savedArgv = argv;
         savedDelegate = delegate;
