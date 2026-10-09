@@ -35,6 +35,5 @@ NSString *NSStringFromCGSize(CGSize s)
     return NSStringFromSize(NSSizeFromCGSize(s));
 }
 
-
 const UIEdgeInsets UIEdgeInsetsZero = {0, 0, 0, 0};
 const UIOffset UIOffsetZero = {0, 0};

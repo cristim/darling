@@ -46,6 +46,14 @@ int main(int argc, char **argv)
         CHECK(r.size.width == 94 && r.size.height == 196, "InsetRect size: w -= left+right, h -= top+bottom");
         r = UIEdgeInsetsInsetRect(CGRectMake(1, 2, 3, 4), *zeroInsets);
         CHECK(CGRectEqualToRect(r, CGRectMake(1, 2, 3, 4)), "zero insets leave rect unchanged");
+
+        // Negative insets outset the rect (documented).
+        r = UIEdgeInsetsInsetRect(CGRectMake(10, 20, 100, 200), UIEdgeInsetsMake(-1, -2, -3, -4));
+        CHECK(CGRectEqualToRect(r, CGRectMake(8, 19, 106, 204)), "negative insets outset the rect");
+        // Rung 6 (not documented Apple behaviour): no clamping of an over-inset rect.
+        r = UIEdgeInsetsInsetRect(CGRectMake(0, 0, 4, 4), UIEdgeInsetsMake(3, 3, 3, 3));
+        CHECK(r.origin.x == 3 && r.origin.y == 3 && r.size.width == -2 && r.size.height == -2,
+              "over-inset rect keeps a negative size");
         puts("PASS UIEdgeInsets/UIOffset: zero constants, make, equality, inset rect");
     }
     return 0;
