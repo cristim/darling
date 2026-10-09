@@ -3,6 +3,7 @@
 
 #import <UIKit/UIResponder.h>
 #import <UIKit/UIColor.h>
+#import <Foundation/NSArray.h>
 #import <CoreGraphics/CGGeometry.h>
 #import <CoreGraphics/CGAffineTransform.h>
 
@@ -26,6 +27,24 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, getter=isOpaque) BOOL opaque;
 @property(nonatomic) BOOL clipsToBounds;
 @property(nonatomic, copy, nullable) UIColor *backgroundColor;
+@property(nonatomic, readonly, nullable) UIView *superview;
+// Index 0 is the back-most view.
+@property(nonatomic, copy, readonly) NSArray<__kindof UIView *> *subviews;
+- (void)addSubview:(UIView *)view;
+- (void)insertSubview:(UIView *)view atIndex:(NSInteger)index;
+- (void)insertSubview:(UIView *)view aboveSubview:(UIView *)siblingSubview;
+- (void)insertSubview:(UIView *)view belowSubview:(UIView *)siblingSubview;
+- (void)removeFromSuperview;
+- (void)bringSubviewToFront:(UIView *)view;
+- (void)sendSubviewToBack:(UIView *)view;
+- (void)exchangeSubviewAtIndex:(NSInteger)index1 withSubviewAtIndex:(NSInteger)index2;
+- (BOOL)isDescendantOfView:(UIView *)view;
+- (nullable __kindof UIView *)viewWithTag:(NSInteger)tag;
+- (void)willMoveToSuperview:(nullable UIView *)newSuperview;
+- (void)didMoveToSuperview;
+- (void)didAddSubview:(UIView *)subview;
+- (void)willRemoveSubview:(UIView *)subview;
+
 // Always nil until UIWindow exists: no view can be in a window yet.
 @property(nonatomic, readonly, nullable) UIWindow *window;
 @end
