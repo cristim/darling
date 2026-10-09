@@ -277,7 +277,7 @@ jobs:
 
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
         with:
-          subject-path: rel/*.tar.zst
+          subject-path: rel/*
 
       - name: Create release (draft first, then publish)
         env:
