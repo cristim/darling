@@ -12,8 +12,9 @@ MULTILIB_ONLY = {"libc6-dev-i386", "gcc-multilib"}
 
 
 def available(package):
-    result = subprocess.run(["apt-cache", "show", package], capture_output=True, text=True)
-    return result.returncode == 0 and bool(result.stdout.strip())
+    # apt-cache show fails for virtual packages (libfreetype6-dev on noble); a simulated install resolves them
+    return subprocess.run(["apt-get", "install", "-s", "--no-install-recommends", package],
+                          capture_output=True).returncode == 0
 
 
 def main():

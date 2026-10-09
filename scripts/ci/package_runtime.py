@@ -88,8 +88,15 @@ def fragment(args):
     print(json.dumps(entry, indent=2))
 
 
+def lock_entries(lock):
+    """Top lock: 'repos'. Nested lock: 'vibedarling' (branch-resolved) and 'external_pinned' (fixed pins)."""
+    if "repos" in lock:
+        return lock["repos"]
+    return lock["vibedarling"] + lock["external_pinned"]
+
+
 def comparable(lock):
-    return sorted((r["repo"], r.get("branch"), r["base"], tuple(r["paths"])) for r in lock["repos"])
+    return sorted((r["repo"], r.get("branch"), r.get("base") or r["pin"]) for r in lock_entries(lock))
 
 
 def merge(args):
@@ -108,7 +115,7 @@ def merge(args):
         if any(s != sets[0] for s in sets):
             raise SystemExit(f"error: {kind} lock differs between architectures; re-run the workflow")
         for d in args.lock_dirs:
-            for item in json.loads(Path(d, f"{kind}.lock.json").read_text())["repos"]:
+            for item in lock_entries(json.loads(Path(d, f"{kind}.lock.json").read_text())):
                 if item.get("prs"):
                     raise SystemExit(f"error: {kind} lock contains PRs for {item['repo']}")
         locks[kind] = f"{kind}.lock.json"

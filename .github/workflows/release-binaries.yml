@@ -18,9 +18,6 @@ concurrency:
 
 env:
   SOURCE_REPO: VibeDarling/darling
-  # darling-launcher commit that contains tools/all-vibedarling-pr-prefix.py with --no-prs
-  BUILDER_REPO: cristim/darling-launcher
-  BUILDER_SHA: 7d7783f6cfb348f7cde55cbc2a7ed6112bae0382
 
 jobs:
   prepare:
@@ -63,13 +60,11 @@ jobs:
           sudo mkdir -p "$W" && sudo chown "$USER" "$W"
           df -h / /mnt
 
-      - name: Fetch superproject and builder at the resolved commits
+      - name: Fetch the superproject at the resolved commit
         run: |
           git clone "https://github.com/${SOURCE_REPO}.git" "$W/darling"
           [ "$(git -C "$W/darling" rev-parse HEAD)" = "${{ needs.prepare.outputs.sha }}" ] \
             || { echo "$SOURCE_REPO moved since the prepare job; re-run" >&2; exit 1; }
-          git clone "https://github.com/${BUILDER_REPO}.git" "$W/builder"
-          git -C "$W/builder" checkout --detach "$BUILDER_SHA"
 
       - name: Install build dependencies
         run: |
@@ -79,7 +74,7 @@ jobs:
 
       - name: Lock default branches (no PRs) and check out
         run: |
-          B="$W/builder/tools/all-vibedarling-pr-prefix.py"
+          B="$GITHUB_WORKSPACE/ci/tools/all-vibedarling-pr-prefix.py"
           python3 "$B" resolve --source "$W/darling" --no-prs --output "$W/refs.lock.json"
           python3 "$B" checkout --lock "$W/refs.lock.json" --workspace "$W/ws"
           python3 "$B" resolve-nested --workspace "$W/ws" --no-prs --output "$W/nested.refs.lock.json"
@@ -177,7 +172,7 @@ jobs:
             --fragments "${frags[@]}" --lock-dirs art/*/ $pre \
             --published-at "$(date -u +%FT%TZ)" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --builder "${BUILDER_REPO}@${BUILDER_SHA}" --out rel/manifest.json
+            --builder "${{ github.repository }}@${{ github.sha }}" --out rel/manifest.json
           (cd rel && sha256sum *.tar.zst manifest.json refs.lock.json nested.refs.lock.json > SHA256SUMS)
           cat rel/manifest.json
 
