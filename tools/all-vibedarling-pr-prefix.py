@@ -161,6 +161,8 @@ def remote_refs(item):
     if item["branch"] not in ("main", "master"):
         item["branch_exception"] = ("declared version branch" if requested else
                                     "default branch has no main/master ref")
+    item["off_branch_prs"] = [pr for pr in item["prs"] if pr["base"] != item["branch"]]
+    item["prs"] = [pr for pr in item["prs"] if pr["base"] == item["branch"]]
     for pr in item["prs"]:
         ref = f"refs/pull/{pr['number']}/head"
         if ref not in refs:
@@ -186,6 +188,18 @@ def remote_refs(item):
     return item
 
 
+def pr_record(pr):
+    repo = pr["repository_url"].rsplit("/", 1)[-1]
+    base = api(f"/repos/{OWNER}/{repo}/pulls/{pr['number']}")["base"]["ref"]
+    return {"number": pr["number"], "url": pr["html_url"], "title": pr["title"], "base": base}
+
+
+def off_branch_exclusions(items):
+    return [{"repo": item["repo"], "number": pr["number"], "url": pr["url"], "title": pr["title"],
+             "reason": f"targets {pr['base']}, not the locked branch {item['branch']}"}
+            for item in items for pr in item.pop("off_branch_prs")]
+
+
 def resolve(args):
     source = Path(args.source).resolve()
     if run("git", "remote", "get-url", "origin", cwd=source) != ROOT:
@@ -197,32 +211,35 @@ def resolve(args):
     for item in items:
         by_repo.setdefault(item["repo"].lower(), []).append(item)
     excluded = []
+    chosen = {r.lower() for r in args.repo or []}
+    if chosen - by_repo.keys():
+        raise RuntimeError(f"unknown repository: {sorted(chosen - by_repo.keys())}")
     for pr in ([] if args.no_prs else open_prs()):
         repo = pr["repository_url"].rsplit("/", 1)[-1]
         key = repo.lower()
-        record = {"number": pr["number"], "url": pr["html_url"],
-                  "title": pr["title"]}
-        if key in by_repo:
-            choices = by_repo[key]
-            if len(choices) > 1:
-                detail = api(f"/repos/{OWNER}/{repo}/pulls/{pr['number']}")
-                target = detail["base"]["ref"]
-                choices = [item for item in choices if item.get("requested_branch") == target]
-                if not choices:
-                    raise RuntimeError(f"{repo} PR #{pr['number']} targets untracked branch {target}")
-            choices[0].setdefault("prs", []).append(record)
-        else:
-            excluded.append({"repo": repo, **record, "reason": "not a superproject or submodule"})
+        if key not in by_repo:
+            excluded.append({"repo": repo, "number": pr["number"], "url": pr["html_url"],
+                             "title": pr["title"], "reason": "not a superproject or submodule"})
+            continue
+        if chosen and key not in chosen:
+            continue
+        record = pr_record(pr)
+        choices = by_repo[key]
+        if len(choices) > 1:
+            choices = [item for item in choices if item.get("requested_branch") == record["base"]]
+            if not choices:
+                excluded.append({"repo": repo, **{k: record[k] for k in ("number", "url", "title")},
+                                 "reason": f"targets untracked branch {record['base']}"})
+                continue
+        choices[0].setdefault("prs", []).append(record)
     for item in items:
         item.setdefault("prs", [])
         item["prs"].sort(key=lambda p: p["number"])
-    if args.repo:
-        chosen = {r.lower() for r in args.repo}
-        if chosen - by_repo.keys():
-            raise RuntimeError(f"unknown repository: {sorted(chosen - by_repo.keys())}")
+    if chosen:
         items = [item for item in items if item["repo"].lower() in chosen]
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         items = list(pool.map(remote_refs, items))
+    excluded += off_branch_exclusions(items)
     if not args.repo and items[0]["base"] != run("git", "rev-parse", "HEAD", cwd=source):
         raise RuntimeError("source HEAD is stale; fetch and check out current VibeDarling master")
     lock = {"schema": 1, "owner": OWNER,

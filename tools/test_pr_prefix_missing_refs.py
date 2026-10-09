@@ -6,7 +6,7 @@ s=importlib.util.spec_from_file_location('builder',Path(__file__).with_name('all
 class MissingRefTests(unittest.TestCase):
  def setUp(self):
   self.base='a'*40;self.head='b'*40
-  self.item={'repo':'indium','url':'https://github.com/VibeDarling/indium.git','prs':[{'number':18}]}
+  self.item={'repo':'indium','url':'https://github.com/VibeDarling/indium.git','prs':[{'number':18,'base':'main'}]}
   self.detail={'state':'open','merged':False,'head':{'sha':self.head,'ref':'fix/identity','repo':{'clone_url':'https://github.com/author/indium.git'}}}
  def fake_git(self,*args,**kw):
   if self.item['url'] in args:return 'ref: refs/heads/main\tHEAD\n'+self.base+'\tHEAD\n'+self.base+'\trefs/heads/main'
