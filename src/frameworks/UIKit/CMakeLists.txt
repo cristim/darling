@@ -13,3 +13,4 @@ add_framework(UIKit
 )
 target_include_directories(UIKit PRIVATE include)
 target_compile_options(UIKit PRIVATE -fobjc-arc)
+target_include_directories(UIKit PRIVATE ${CMAKE_SOURCE_DIR}/src/external/cocotron)
