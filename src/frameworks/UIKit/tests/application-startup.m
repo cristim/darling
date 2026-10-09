@@ -54,6 +54,8 @@ static int willCount, didCount;
     fprintf(stderr, "timer\n");
     if (!strcmp(mode, "run-loop-returns")) {
         [NSApp stop:nil];
+        // stop: only clears the flag; the loop re-checks it after the next event.
+        [NSApp postEvent:[NSEvent otherEventWithType:NSApplicationDefined location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:YES];
     } else {
         [NSApp terminate:nil];
     }
