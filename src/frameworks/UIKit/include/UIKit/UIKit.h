@@ -11,3 +11,5 @@
 #import <UIKit/UIWindowScene.h>
 #import <UIKit/UIView.h>
 #import <UIKit/UIScreen.h>
+#import <UIKit/UIApplicationDelegate.h>
+#import <UIKit/UIApplication.h>
