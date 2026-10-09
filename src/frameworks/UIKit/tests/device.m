@@ -17,7 +17,7 @@ int main(int argc, char **argv)
         UIDevice *device = [deviceClass currentDevice];
         CHECK(device != nil && device == [deviceClass currentDevice]);
 
-        CHECK([device.name length] > 0);
+        CHECK([device.name isEqualToString:device.model]);
         CHECK([device.model isEqualToString:@"Mac"]);
 
         // systemVersion is the host OS version as dotted decimal.
@@ -29,11 +29,11 @@ int main(int argc, char **argv)
 
         CHECK(device.orientation == UIDeviceOrientationUnknown);
         CHECK(device.multitaskingSupported);
-        CHECK(!device.generatingDeviceOrientationNotifications);
+        CHECK(!device.generatesDeviceOrientationNotifications);
         [device beginGeneratingDeviceOrientationNotifications];
         [device beginGeneratingDeviceOrientationNotifications];
         [device endGeneratingDeviceOrientationNotifications];
-        CHECK(!device.generatingDeviceOrientationNotifications);
+        CHECK(!device.generatesDeviceOrientationNotifications);
         [device endGeneratingDeviceOrientationNotifications];
 
         CHECK(UIDeviceOrientationUnknown == 0 && UIDeviceOrientationPortrait == 1 &&

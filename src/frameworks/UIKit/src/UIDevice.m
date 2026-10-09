@@ -43,9 +43,11 @@ NSNotificationName const UIDeviceOrientationDidChangeNotification = @"UIDeviceOr
     return device;
 }
 
+// The docs give a generic, model-like name for callers without the user-assigned-name
+// entitlement (iOS 16+); returning the host name would leak it.
 - (NSString *)name
 {
-    return [[NSProcessInfo processInfo] hostName];
+    return [self model];
 }
 
 - (NSString *)systemVersion

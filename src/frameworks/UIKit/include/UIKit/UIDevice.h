@@ -56,7 +56,7 @@ typedef NS_ENUM(NSInteger, UIDeviceOrientation) {
 @property(nonatomic, readonly, strong) NSString *model;
 @property(nonatomic, readonly) UIDeviceOrientation orientation;
 @property(nonatomic, readonly, getter=isMultitaskingSupported) BOOL multitaskingSupported;
-@property(nonatomic, readonly, getter=isGeneratingDeviceOrientationNotifications) BOOL generatingDeviceOrientationNotifications;
+@property(nonatomic, readonly, getter=isGeneratingDeviceOrientationNotifications) BOOL generatesDeviceOrientationNotifications;
 
 - (void)beginGeneratingDeviceOrientationNotifications;
 - (void)endGeneratingDeviceOrientationNotifications;
