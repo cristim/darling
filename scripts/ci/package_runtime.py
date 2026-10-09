@@ -109,6 +109,16 @@ def merge(args):
         artifacts[arch] = entry
     if not artifacts:
         raise SystemExit("error: no architecture produced an image")
+    expected = {Path(path).parent / entry["file"] for path, entry in
+                ((p, json.loads(Path(p).read_text())) for p in args.fragments)}
+    for tarball in sorted(expected):
+        entry = next(e for e in artifacts.values() if e["file"] == tarball.name)
+        if not tarball.is_file() or sha256(tarball) != entry["sha256"]:
+            raise SystemExit(f"error: {tarball} is missing or does not match its fragment sha256")
+    for directory in {t.parent for t in expected}:
+        unexpected = sorted(set(directory.glob("*.tar.zst")) - expected)
+        if unexpected:
+            raise SystemExit(f"error: unexpected tarball(s) in {directory}: {[u.name for u in unexpected]}")
     locks = {}
     for kind in ("refs", "nested.refs"):
         sets = [comparable(json.loads(Path(d, f"{kind}.lock.json").read_text())) for d in args.lock_dirs]

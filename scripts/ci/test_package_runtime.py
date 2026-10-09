@@ -47,6 +47,18 @@ class Merge(unittest.TestCase):
             "source_ref": "refs/heads/master", "deny_self_hosted_runners": True})
         self.assertEqual(manifest["build"]["recipe_sha256"], "r")
 
+    def test_tampered_tarball_is_rejected(self):
+        done, _ = self.merge([self.arch_dir("aarch64", lie=True)])
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("does not match its fragment sha256", done.stderr)
+
+    def test_extra_tarball_is_rejected(self):
+        d = self.arch_dir("aarch64")
+        (d / "evil.tar.zst").write_bytes(b"x")
+        done, _ = self.merge([d])
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("unexpected tarball", done.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
