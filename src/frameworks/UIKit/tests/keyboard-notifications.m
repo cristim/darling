@@ -1,5 +1,7 @@
 #import <UIKit/UIKeyboardNotifications.h>
 #import <Foundation/NSNotification.h>
+#import <Foundation/NSSet.h>
+#import <Foundation/NSString.h>
 #include <dlfcn.h>
 #include <stdio.h>
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #c); return 1; } } while (0)
