@@ -114,7 +114,8 @@ jobs:
         run: |
           force=""; [ "$FORCE" = "true" ] && force="--force"
           recipe=$(python3 ci/scripts/ci/lock_diff.py recipe "--extra=$EXTRA_CMAKE_ARGS" \
-            ci/.github/workflows/release-binaries.yml ci/scripts/ci/*.py ci/tools/all-vibedarling-pr-prefix.py)
+            ci/.github/workflows/release-binaries.yml ci/scripts/ci/package_runtime.py \
+            ci/scripts/ci/install-build-deps.py ci/tools/all-vibedarling-pr-prefix.py)
           echo "recipe=$recipe" >> "$GITHUB_OUTPUT"
           python3 ci/scripts/ci/lock_diff.py diff --old prev --new cur --recipe "$recipe" --markdown cur/changes.md \
             --github-output "$GITHUB_OUTPUT" $force

@@ -22,7 +22,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from package_runtime import comparable  # noqa: E402
 
 KINDS = ("refs", "nested.refs")
-ARCHES = {"aarch64", "x86_64"}
 RELEASE_TAG = re.compile(r"^v\d{4}\.\d{2}\.\d{2}-[0-9a-f]{7}(-r\d+)?$")
 BASELINE_ASSETS = {"refs.lock.json", "nested.refs.lock.json", "manifest.json"}
 
@@ -113,15 +112,12 @@ def diff(args):
     manifest_path = Path(args.old, "manifest.json")
     manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
     recipe_changed = manifest.get("build", {}).get("recipe_sha256") != args.recipe
-    arches_missing = ARCHES - set(manifest.get("artifacts", {}))
     if first:
         reason, build = "No previous release locks: first build.", True
     elif rows:
         reason, build = f"{len(rows)} module(s) changed since the previous release.", True
     elif recipe_changed:
         reason, build = "The build recipe (workflow, scripts or CMake arguments) changed since the previous release.", True
-    elif arches_missing:
-        reason, build = f"The previous release lacks {', '.join(sorted(arches_missing))}.", True
     elif args.force:
         reason, build = "Nothing changed since the previous release; build forced.", True
     else:

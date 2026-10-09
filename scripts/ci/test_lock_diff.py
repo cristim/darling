@@ -27,12 +27,12 @@ class Diff(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def write(self, name, refs, nest, recipe="r1", arches=("aarch64", "x86_64")):
+    def write(self, name, refs, nest, recipe="r1"):
         d = self.root / name
         d.mkdir(exist_ok=True)
         if name == "old":
             (d / "manifest.json").write_text(json.dumps(
-                {"build": {"recipe_sha256": recipe}, "artifacts": {a: {} for a in arches}}))
+                {"build": {"recipe_sha256": recipe}}))
         (d / "refs.lock.json").write_text(json.dumps(refs))
         (d / "nested.refs.lock.json").write_text(json.dumps(nest))
 
@@ -95,13 +95,6 @@ class Diff(unittest.TestCase):
         (self.root / "old" / "manifest.json").write_text(json.dumps({"artifacts": {"aarch64": {}, "x86_64": {}}}))
         self.write("new", top(A, B), nested(A, B))
         self.assertEqual(self.run_diff("old")[0], "build=true")
-
-    def test_partial_previous_release_builds(self):
-        self.write("old", top(A, B), nested(A, B), arches=("aarch64",))
-        self.write("new", top(A, B), nested(A, B))
-        build, md = self.run_diff("old")
-        self.assertEqual(build, "build=true")
-        self.assertIn("lacks x86_64", md)
 
     def run_raw(self, force=False):
         cmd = [sys.executable, str(HELPER), "diff", "--old", str(self.root / "old"), "--new", str(self.root / "new"),
