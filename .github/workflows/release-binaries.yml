@@ -176,18 +176,13 @@ jobs:
           key: ${{ steps.key.outputs.k }}
           restore-keys: ccache-${{ matrix.arch }}-
 
-      - name: Configure, build, install to a staging image
+      - name: Configure, build and stage with the builder
         run: |
           ccache --max-size=3G
-          cmake -S "$W/ws/source" -B "$W/ws/build" -G Ninja -DCMAKE_INSTALL_PREFIX=/usr/local \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache $EXTRA_CMAKE_ARGS
-          cmake --build "$W/ws/build" --parallel "$(nproc)"
-          # a clean first run can leave work pending after build-graph regeneration
-          if ! ninja -C "$W/ws/build" -n | grep -qi "no work to do"; then
-            cmake --build "$W/ws/build" --parallel "$(nproc)"
-          fi
-          ninja -C "$W/ws/build" -n | grep -qi "no work to do"
-          DESTDIR="$W/ws/image" cmake --install "$W/ws/build"
+          args=(--cmake-arg=-DCMAKE_C_COMPILER_LAUNCHER=ccache --cmake-arg=-DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+          for a in $EXTRA_CMAKE_ARGS; do args+=("--cmake-arg=$a"); done
+          python3 "$GITHUB_WORKSPACE/ci/tools/all-vibedarling-pr-prefix.py" build --workspace "$W/ws" \
+            --stage-only --jobs "$(nproc)" "${args[@]}"
           ccache -s
 
       - name: Package
@@ -196,6 +191,7 @@ jobs:
           python3 ci/scripts/ci/package_runtime.py fragment --image "$W/ws/image" \
             --version "${{ needs.prepare.outputs.version }}" --arch "${{ matrix.arch }}" --out out
           cp "$W/refs.lock.json" "$W/nested.refs.lock.json" out/
+          cp "$W/ws/runtime.manifest.json" "out/runtime.manifest-${{ matrix.arch }}.json"
 
       - name: Smoke test (informational, hosted runners may lack namespaces)
         continue-on-error: true
@@ -249,7 +245,7 @@ jobs:
           shopt -s nullglob
           frags=(art/*/fragment-*.json)
           mkdir rel
-          cp art/*/*.tar.zst rel/
+          cp art/*/*.tar.zst art/*/runtime.manifest-*.json rel/
           first=$(ls -d art/*/ | head -1)
           cp "$first"refs.lock.json "$first"nested.refs.lock.json rel/
           python3 scripts/ci/package_runtime.py merge --version "${{ needs.prepare.outputs.version }}" \
@@ -259,7 +255,7 @@ jobs:
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --builder "${{ github.repository }}@${{ github.sha }}" --cmake-args "$EXTRA_CMAKE_ARGS" \
             --recipe-sha "${{ needs.prepare.outputs.recipe }}" --out rel/manifest.json
-          (cd rel && sha256sum *.tar.zst manifest.json refs.lock.json nested.refs.lock.json > SHA256SUMS)
+          (cd rel && sha256sum *.tar.zst runtime.manifest-*.json manifest.json refs.lock.json nested.refs.lock.json > SHA256SUMS)
           cat rel/manifest.json
 
       - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
@@ -273,7 +269,7 @@ jobs:
           tag="${{ needs.prepare.outputs.version }}"
           gh release create "$tag" rel/* --draft ${{ steps.kind.outputs.flag }} --target "${{ github.sha }}" \
             --title "Darling runtime $tag" \
-            --notes "Built from ${{ env.SOURCE_REPO }} ${{ needs.prepare.outputs.sha }} (default branches, no PRs). Extra CMake args: ${{ env.EXTRA_CMAKE_ARGS }}. Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo ${{ github.repository }}"
+            --notes "Built from ${{ env.SOURCE_REPO }} ${{ needs.prepare.outputs.sha }} (default or declared branches, no PRs). Extra CMake args: ${{ env.EXTRA_CMAKE_ARGS }}. Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo ${{ github.repository }}"
           gh release edit "$tag" --draft=false
 
   notify-failure:
