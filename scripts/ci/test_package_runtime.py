@@ -59,6 +59,38 @@ class Merge(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0)
         self.assertIn("unexpected tarball", done.stderr)
 
+    def test_fragment_in_wrong_artifact_is_rejected(self):
+        d = self.arch_dir("aarch64")
+        forged = self.root / "art" / "runtime-evil"
+        d.rename(forged)
+        (forged / "fragment-aarch64.json").write_text((forged / "fragment-aarch64.json").read_text())
+        out = self.root / "m.json"
+        cmd = [sys.executable, str(PACKAGER), "merge", "--version", "v1", "--repo", "R/r", "--sha", "b" * 40,
+               "--published-at", "n", "--recipe-sha", "r", "--source-ref", "x", "--out", str(out),
+               "--fragments", str(forged / "fragment-aarch64.json"), "--lock-dirs", str(forged)]
+        done = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertIn("is not in the runtime-aarch64 artifact", done.stderr)
+
+    def test_misnamed_tarball_is_rejected(self):
+        d = self.arch_dir("aarch64")
+        frag = d / "fragment-aarch64.json"
+        entry = json.loads(frag.read_text())
+        (d / "other.tar.zst").write_bytes(b"image")
+        entry["file"] = "other.tar.zst"
+        frag.write_text(json.dumps(entry))
+        done, _ = self.merge([d])
+        self.assertIn("names an unexpected file", done.stderr)
+
+    def test_duplicate_arch_is_rejected(self):
+        d = self.arch_dir("aarch64")
+        done, _ = self.merge([d, d])
+        self.assertIn("duplicate fragment for aarch64", done.stderr)
+
+    def test_unknown_arch_is_rejected(self):
+        d = self.arch_dir("riscv64")
+        done, _ = self.merge([d])
+        self.assertIn("unknown architecture", done.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

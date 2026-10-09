@@ -12,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+ARCHES = ("aarch64", "x86_64")
 ROOT = "usr/local"
 NATIVE = "usr/local/libexec/darling/usr/lib/native"
 HOST_ELF_DIRS = ("usr/local/bin", "usr/local/libexec/darling/bin", "usr/local/libexec/darling/usr/libexec/darling")
@@ -105,6 +106,14 @@ def merge(args):
     for path in args.fragments:
         arch = Path(path).stem.removeprefix("fragment-")
         entry = json.loads(Path(path).read_text())
+        if arch not in ARCHES:
+            raise SystemExit(f"error: unknown architecture in {path}")
+        if arch in artifacts:
+            raise SystemExit(f"error: duplicate fragment for {arch}")
+        if Path(path).parent.name != f"runtime-{arch}":
+            raise SystemExit(f"error: {path} is not in the runtime-{arch} artifact")
+        if entry["file"] != f"darling-runtime-{args.version}-linux-{arch}.tar.zst":
+            raise SystemExit(f"error: {path} names an unexpected file: {entry['file']}")
         entry["url"] = f"{base}/{entry['file']}"
         artifacts[arch] = entry
     if not artifacts:
