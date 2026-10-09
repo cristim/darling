@@ -4,6 +4,12 @@
     CGRect _bounds;
     CGPoint _center;
     CGAffineTransform _transform;
+    NSInteger _tag;
+    BOOL _hidden;
+    CGFloat _alpha;
+    BOOL _opaque;
+    BOOL _clipsToBounds;
+    UIColor *_backgroundColor;
 }
 
 // rung 6: UIView's plain -init is not on the pages read; it is routed to the documented
@@ -20,6 +26,11 @@
         _bounds = CGRectMake(0, 0, frame.size.width, frame.size.height);
         _center = CGPointMake(frame.origin.x + frame.size.width / 2, frame.origin.y + frame.size.height / 2);
         _transform = CGAffineTransformIdentity;
+        // Documented defaults: tag 0, not hidden, opaque YES, clipsToBounds NO,
+        // backgroundColor nil. alpha 1.0 is the "totally opaque" end of the documented range;
+        // the pages read do not state the default (rung 6).
+        _alpha = 1.0;
+        _opaque = YES;
     }
     return self;
 }
@@ -56,5 +67,21 @@
     _center = CGPointMake(frame.origin.x + frame.size.width / 2, frame.origin.y + frame.size.height / 2);
     _bounds.size = frame.size;
 }
+
+- (NSInteger)tag { return _tag; }
+- (void)setTag:(NSInteger)tag { _tag = tag; }
+- (BOOL)isHidden { return _hidden; }
+- (void)setHidden:(BOOL)hidden { _hidden = hidden; }
+// rung 6: stored as given; the pages describe the range 0.0 to 1.0 but not what happens outside it.
+- (CGFloat)alpha { return _alpha; }
+- (void)setAlpha:(CGFloat)alpha { _alpha = alpha; }
+- (BOOL)isOpaque { return _opaque; }
+- (void)setOpaque:(BOOL)opaque { _opaque = opaque; }
+- (BOOL)clipsToBounds { return _clipsToBounds; }
+- (void)setClipsToBounds:(BOOL)clipsToBounds { _clipsToBounds = clipsToBounds; }
+- (UIColor *)backgroundColor { return _backgroundColor; }
+- (void)setBackgroundColor:(UIColor *)backgroundColor { _backgroundColor = [backgroundColor copy]; }
+
+- (UIWindow *)window { return nil; }
 
 @end
