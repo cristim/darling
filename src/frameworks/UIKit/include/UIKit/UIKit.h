@@ -4,3 +4,4 @@
 #import <UIKit/UIColor.h>
 #import <UIKit/UIImage.h>
 #import <UIKit/UIGraphicsImageContext.h>
+#import <UIKit/UISceneConfiguration.h>
