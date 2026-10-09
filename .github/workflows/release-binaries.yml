@@ -154,9 +154,11 @@ jobs:
           df -h / /mnt
 
       - name: Fetch the superproject at the resolved commit
+        env:
+          SHA: ${{ needs.prepare.outputs.sha }}
         run: |
           git clone "https://github.com/${SOURCE_REPO}.git" "$W/darling"
-          [ "$(git -C "$W/darling" rev-parse HEAD)" = "${{ needs.prepare.outputs.sha }}" ] \
+          [ "$(git -C "$W/darling" rev-parse HEAD)" = "$SHA" ] \
             || { echo "$SOURCE_REPO moved since the prepare job; re-run" >&2; exit 1; }
 
       - name: Install build dependencies
@@ -178,10 +180,11 @@ jobs:
         id: key
         env:
           RECIPE: ${{ needs.prepare.outputs.recipe }}
+          ARCH: ${{ matrix.arch }}
         run: |
           h=$(python3 -c "import json,hashlib;l=json.load(open('$W/refs.lock.json'));print(hashlib.sha256(json.dumps(sorted((r['repo'],r['base']) for r in l['repos'])).encode()).hexdigest()[:16])")
-          echo "prefix=ccache-${{ matrix.arch }}-${RECIPE:0:16}-" >> "$GITHUB_OUTPUT"
-          echo "k=ccache-${{ matrix.arch }}-${RECIPE:0:16}-$h" >> "$GITHUB_OUTPUT"
+          echo "prefix=ccache-${ARCH}-${RECIPE:0:16}-" >> "$GITHUB_OUTPUT"
+          echo "k=ccache-${ARCH}-${RECIPE:0:16}-$h" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
@@ -199,12 +202,15 @@ jobs:
           ccache -s
 
       - name: Package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ARCH: ${{ matrix.arch }}
         run: |
           mkdir out
           python3 ci/scripts/ci/package_runtime.py fragment --image "$W/ws/image" \
-            --version "${{ needs.prepare.outputs.version }}" --arch "${{ matrix.arch }}" --out out
+            --version "$VERSION" --arch "$ARCH" --out out
           cp "$W/refs.lock.json" "$W/nested.refs.lock.json" out/
-          cp "$W/ws/runtime.manifest.json" "out/runtime.manifest-${{ matrix.arch }}.json"
+          cp "$W/ws/runtime.manifest.json" "out/runtime.manifest-$ARCH.json"
 
       - name: Smoke test (informational, hosted runners may lack namespaces)
         continue-on-error: true
@@ -268,6 +274,14 @@ jobs:
           echo "flag=$flag" >> "$GITHUB_OUTPUT"
 
       - name: Build manifest and checksums
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SRC_SHA: ${{ needs.prepare.outputs.sha }}
+          RECIPE: ${{ needs.prepare.outputs.recipe }}
+          FLAG: ${{ steps.kind.outputs.flag }}
+          SOURCE_REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           shopt -s nullglob
           frags=(art/*/fragment-*.json)
@@ -275,13 +289,12 @@ jobs:
           cp art/*/*.tar.zst art/*/runtime.manifest-*.json rel/
           first=$(ls -d art/*/ | head -1)
           cp "$first"refs.lock.json "$first"nested.refs.lock.json rel/
-          python3 scripts/ci/package_runtime.py merge --version "${{ needs.prepare.outputs.version }}" \
-            --repo "${{ github.repository }}" --sha "${{ needs.prepare.outputs.sha }}" \
-            --fragments "${frags[@]}" --lock-dirs art/*/ ${{ steps.kind.outputs.flag }} \
-            --published-at "$(date -u +%FT%TZ)" \
-            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --builder "${{ github.repository }}@${{ github.sha }}" --cmake-args "$EXTRA_CMAKE_ARGS" \
-            --recipe-sha "${{ needs.prepare.outputs.recipe }}" --source-ref "${{ github.ref }}" --out rel/manifest.json
+          python3 scripts/ci/package_runtime.py merge --version "$VERSION" \
+            --repo "$REPO" --sha "$SRC_SHA" \
+            --fragments "${frags[@]}" --lock-dirs art/*/ $FLAG \
+            --published-at "$(date -u +%FT%TZ)" --run-url "$RUN_URL" \
+            --builder "$REPO@$GITHUB_SHA" --cmake-args "$EXTRA_CMAKE_ARGS" \
+            --recipe-sha "$RECIPE" --source-ref "$SOURCE_REF" --out rel/manifest.json
           (cd rel && sha256sum *.tar.zst runtime.manifest-*.json manifest.json refs.lock.json nested.refs.lock.json > SHA256SUMS)
           cat rel/manifest.json
 
@@ -292,12 +305,16 @@ jobs:
       - name: Create release (draft first, then publish)
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.version }}
+          FLAG: ${{ steps.kind.outputs.flag }}
+          SRC_SHA: ${{ needs.prepare.outputs.sha }}
+          SOURCE_REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
         run: |
-          tag="${{ needs.prepare.outputs.version }}"
-          gh release create "$tag" rel/* --draft ${{ steps.kind.outputs.flag }} --target "${{ github.sha }}" \
-            --title "Darling runtime $tag" \
-            --notes "Built from ${{ env.SOURCE_REPO }} ${{ needs.prepare.outputs.sha }} (default or declared branches, no PRs). Extra CMake args: ${{ env.EXTRA_CMAKE_ARGS }}. Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo ${{ github.repository }} --signer-workflow ${{ github.repository }}/.github/workflows/release-binaries.yml --source-ref ${{ github.ref }} --deny-self-hosted-runners"
-          gh release edit "$tag" --draft=false
+          notes="Built from $SOURCE_REPO $SRC_SHA (default or declared branches, no PRs). Extra CMake args: $EXTRA_CMAKE_ARGS. Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo $REPO --signer-workflow $REPO/.github/workflows/release-binaries.yml --source-ref $SOURCE_REF --deny-self-hosted-runners"
+          gh release create "$TAG" rel/* --draft $FLAG --target "$GITHUB_SHA" \
+            --title "Darling runtime $TAG" --notes "$notes"
+          gh release edit "$TAG" --draft=false
 
   notify-failure:
     needs: [prepare, build, publish]
