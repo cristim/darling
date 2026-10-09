@@ -1,0 +1,197 @@
+name: Release prebuilt binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: Mark the release as a pre-release
+        type: boolean
+        default: true
+  push:
+    branches: [ci/prebuilt-release]
+
+permissions: {}
+
+concurrency:
+  group: release-binaries-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_REPO: VibeDarling/darling
+  # darling-launcher commit that contains tools/all-vibedarling-pr-prefix.py with --no-prs
+  BUILDER_REPO: cristim/darling-launcher
+  BUILDER_SHA: 7d7783f6cfb348f7cde55cbc2a7ed6112bae0382
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions: {}
+    outputs:
+      sha: ${{ steps.v.outputs.sha }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          sha=$(git ls-remote "https://github.com/${SOURCE_REPO}.git" HEAD | cut -f1)
+          [ -n "$sha" ] || { echo "cannot resolve $SOURCE_REPO HEAD" >&2; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=v$(date -u +%Y.%m.%d)-${sha:0:7}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x86_64, runner: ubuntu-24.04}
+          - {arch: aarch64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 340
+    permissions:
+      contents: read
+    env:
+      W: /mnt/darling-work
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: ci
+          persist-credentials: false
+
+      - name: Free disk and create workspace on /mnt
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          sudo mkdir -p "$W" && sudo chown "$USER" "$W"
+          df -h / /mnt
+
+      - name: Fetch superproject and builder at the resolved commits
+        run: |
+          git clone "https://github.com/${SOURCE_REPO}.git" "$W/darling"
+          [ "$(git -C "$W/darling" rev-parse HEAD)" = "${{ needs.prepare.outputs.sha }}" ] \
+            || { echo "$SOURCE_REPO moved since the prepare job; re-run" >&2; exit 1; }
+          git clone "https://github.com/${BUILDER_REPO}.git" "$W/builder"
+          git -C "$W/builder" checkout --detach "$BUILDER_SHA"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          python3 ci/scripts/ci/install-build-deps.py "$W/darling/debian/control"
+          sudo apt-get install -y --no-install-recommends ccache zstd
+
+      - name: Lock default branches (no PRs) and check out
+        run: |
+          B="$W/builder/tools/all-vibedarling-pr-prefix.py"
+          python3 "$B" resolve --source "$W/darling" --no-prs --output "$W/refs.lock.json"
+          python3 "$B" checkout --lock "$W/refs.lock.json" --workspace "$W/ws"
+          python3 "$B" resolve-nested --workspace "$W/ws" --no-prs --output "$W/nested.refs.lock.json"
+          python3 "$B" checkout-nested --workspace "$W/ws" --lock "$W/nested.refs.lock.json"
+          df -h /mnt
+
+      - name: ccache key
+        id: key
+        run: |
+          h=$(python3 -c "import json,hashlib;l=json.load(open('$W/refs.lock.json'));print(hashlib.sha256(json.dumps(sorted((r['repo'],r['base']) for r in l['repos'])).encode()).hexdigest()[:16])")
+          echo "k=ccache-${{ matrix.arch }}-$h" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/.cache/ccache
+          key: ${{ steps.key.outputs.k }}
+          restore-keys: ccache-${{ matrix.arch }}-
+
+      - name: Configure, build, install to a staging image
+        run: |
+          ccache --max-size=3G
+          cmake -S "$W/ws/source" -B "$W/ws/build" -G Ninja -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build "$W/ws/build" --parallel "$(nproc)"
+          # a clean first run can leave work pending after build-graph regeneration
+          if ! ninja -C "$W/ws/build" -n | grep -qi "no work to do"; then
+            cmake --build "$W/ws/build" --parallel "$(nproc)"
+          fi
+          ninja -C "$W/ws/build" -n | grep -qi "no work to do"
+          DESTDIR="$W/ws/image" cmake --install "$W/ws/build"
+          ccache -s
+
+      - name: Package
+        run: |
+          mkdir out
+          python3 ci/scripts/ci/package_runtime.py fragment --image "$W/ws/image" \
+            --version "${{ needs.prepare.outputs.version }}" --arch "${{ matrix.arch }}" --out out
+          cp "$W/refs.lock.json" "$W/nested.refs.lock.json" out/
+
+      - name: Smoke test (informational, hosted runners may lack namespaces)
+        continue-on-error: true
+        run: |
+          export DPREFIX="$W/smoke-prefix" DARLING_INSTALL_PREFIX="$W/ws/image/usr/local"
+          "$W/ws/build/src/startup/darling" shell true
+          "$W/ws/build/src/startup/darling" shutdown
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-${{ matrix.arch }}
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: runtime-*
+          path: art
+
+      - name: Choose the release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ needs.prepare.outputs.version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            n=2; while gh release view "$tag-r$n" >/dev/null 2>&1; do n=$((n+1)); done
+            tag="$tag-r$n"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build manifest and checksums
+        run: |
+          shopt -s nullglob
+          frags=(art/*/fragment-*.json)
+          [ "${#frags[@]}" -gt 0 ] || { echo "no architecture built" >&2; exit 1; }
+          mkdir rel
+          cp art/*/*.tar.zst rel/
+          first=$(ls -d art/*/ | head -1)
+          cp "$first"refs.lock.json "$first"nested.refs.lock.json rel/
+          pre=""; [ "${{ github.event_name == 'push' || inputs.prerelease }}" = "true" ] && pre="--prerelease"
+          python3 scripts/ci/package_runtime.py merge --version "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" --sha "${{ needs.prepare.outputs.sha }}" \
+            --fragments "${frags[@]}" --lock-dirs art/*/ $pre \
+            --published-at "$(date -u +%FT%TZ)" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --builder "${BUILDER_REPO}@${BUILDER_SHA}" --out rel/manifest.json
+          (cd rel && sha256sum *.tar.zst manifest.json refs.lock.json nested.refs.lock.json > SHA256SUMS)
+          cat rel/manifest.json
+
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: rel/*.tar.zst
+
+      - name: Create release (draft first, then publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          pre=""; [ "${{ github.event_name == 'push' || inputs.prerelease }}" = "true" ] && pre="--prerelease"
+          gh release create "$tag" rel/* --draft $pre --target "${{ github.sha }}" \
+            --title "Darling runtime $tag" \
+            --notes "Built from ${{ env.SOURCE_REPO }} ${{ needs.prepare.outputs.sha }} (default branches, no PRs). Locks: refs.lock.json, nested.refs.lock.json. Verify: gh attestation verify <file> --repo ${{ github.repository }}"
+          gh release edit "$tag" --draft=false
