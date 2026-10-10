@@ -30,7 +30,7 @@ for directory in ('basic-headers',
                   'framework-include', 'src/external/foundation/include',
                   'src/external/corefoundation/include',
                   'src/external/cocotron/CoreGraphics/include',
-                  'src/external/cocotron', 'src/external/cocotron/AppKit/include', 'src/frameworks/UIKit/include'):
+                  'src/external/cocotron/AppKit/include', 'src/external/cocotron', 'src/frameworks/UIKit/include'):
     compile_flags += ['-I' + str(source / directory)]
 linker = args.linker.resolve()
 if not linker.is_file():
