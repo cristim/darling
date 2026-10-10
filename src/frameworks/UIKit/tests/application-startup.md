@@ -38,3 +38,5 @@ Exceptions from
 - AppKit reads arguments from `/proc/self/cmdline`, not the `argv` passed in.
 - Fail-before is a link failure (the base tree has no `UIApplicationMain`); deletion probes
   cover each policy branch instead.
+
+API notes: `UIApplication.delegate` is declared `assign`, which matches the documentation (Objective-C `assign`, Swift `unowned(unsafe)`); the bridge keeps the delegate alive for the process. Deviations that remain (rung 6): `+sharedApplication` is nil until `UIApplicationMain` runs, UIApplicationState raw values are undocumented, and a delegate class must conform to `UIApplicationDelegate` (host policy).

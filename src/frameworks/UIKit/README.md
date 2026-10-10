@@ -1,9 +1,25 @@
-# UIKit compositional layout values
+# UIKit (partial)
 
-This first component implements documented layout dimension, size, spacing and
-edge-spacing factories and getters, including NSCopying. These objects describe
-layout inputs. No collection view renderer or application/window lifecycle is
-implemented by this component.
+A partial UIKit for Darling, built as an iOSSupport framework. Each component has a
+focused test in `tests/`, most with a `.md` giving the specification rung for every
+value. Nothing here is a renderer: UIView holds state and geometry only, windows and
+scenes are stubs, and `UIApplicationMain` runs the AppKit event loop without creating UI.
+
+| Component | Test (`--test-source src/frameworks/UIKit/tests/<file>`) |
+|---|---|
+| Compositional layout values (dimension, size, spacing, edge spacing) | `layout-values.m` (default) |
+| Layout item, CGSize strings, UIEdgeInsets/UIOffset | `layout-item.m`, `geometry.m`, `insets-offset.m` |
+| Graphics context stack, bitmap image contexts | `graphics-context.m`, `bitmap-context.m` |
+| UIColor, UIImage | `color-values.m`, `image-values.m` |
+| UISceneConfiguration, UIWindowScene | `scene-configuration.m`, `window-scene.m` |
+| UIResponder chain | `responder-chain.m` |
+| Keyboard notification names, UIDevice | `keyboard-notifications.m`, `device.m` |
+| UIView state, hierarchy, geometry, conversion | `view-state.m`, `view-hierarchy.m`, `view-geometry.m`, `view-convert.m` |
+| UIScreen | `screen-values.m` |
+| UIApplication, UIApplicationDelegate, UIApplicationMain | `application-startup.m` (modes via `UIAPP_FIXTURE_MODE`; needs a Wayland display, see its `.md`) |
+
+The layout component is described below. Newer uniform sibling dimensions and layout
+groups/sections are not implemented.
 
 Specification: Apple public documentation (clean-room rung 3):
 
@@ -16,7 +32,7 @@ Darling rejects nonfinite layout values, negative dimensions, missing size
 dimensions, incorrectly typed edges, and bare init/new. This validation is a
 conservative boundary policy (rung 6); Apple's exact invalid-input behavior has
 not been observed. Finite negative spacing remains representable. Newer uniform
-sibling dimensions and layout items/groups/sections are not implemented here.
+sibling dimensions are not implemented here.
 
 `tests/layout-values.m` uses runtime class lookup so the same executable can run
 against the baseline without UIKit: it fails at the missing classes. Pass the
@@ -29,6 +45,9 @@ No private UIKit contracts or guessed constant values are supplied.
 The Objective-C getters on `NSCollectionLayoutSpacing` are `isFixedSpacing` and
 `isFlexibleSpacing`, the names Apple documents for Objective-C (`isFixed` and
 `isFlexible` are the Swift spellings and must not be added as selectors).
+
+The focused build script adds `src/external/cocotron` to its include path (UIScreen.m
+imports `<AppKit/NSErrors.h>` from there, as the CMake target does).
 
 Focused build (use independently cloned dependencies at the superproject pins):
 
