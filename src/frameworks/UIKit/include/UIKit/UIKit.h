@@ -10,3 +10,4 @@
 #import <UIKit/UIDevice.h>
 #import <UIKit/UIWindowScene.h>
 #import <UIKit/UIView.h>
+#import <UIKit/UIControl.h>
