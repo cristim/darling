@@ -46,6 +46,26 @@ static int shapeInitCount;
 }
 @end
 
+// A UIApplication subclass named as both principal and delegate class (documented case).
+static int selfInitCount;
+
+@interface SelfDelegateApplication : UIApplication <UIApplicationDelegate>
+@end
+@implementation SelfDelegateApplication
+- (instancetype)init
+{
+    if ((self = [super init])) selfInitCount++;
+    return self;
+}
+- (BOOL)application:(UIApplication *)a didFinishLaunchingWithOptions:(NSDictionary *)o
+{
+    fprintf(stderr, "self did init=%d delegate-is-app=%d shared-is-app=%d\n", selfInitCount,
+            a.delegate == (id)a, a == [UIApplication sharedApplication]);
+    [NSApp performSelector:@selector(terminate:) withObject:nil afterDelay:0.2];
+    return YES;
+}
+@end
+
 @interface ThrowingApplication : UIApplication
 @end
 @implementation ThrowingApplication
@@ -125,6 +145,10 @@ int main(int argc, char **argv)
         if (!strcmp(mode, "app-subclass")) {
             principal = @"ShapeApplication";
             delegate = @"ShapeDelegate";
+        }
+        if (!strcmp(mode, "self-delegate")) {
+            principal = @"SelfDelegateApplication";
+            delegate = @"SelfDelegateApplication";
         }
         savedArgc = argc;
         savedArgv = argv;

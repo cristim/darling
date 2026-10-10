@@ -8,6 +8,7 @@ line `UIApplicationMain: <cause>`, and the run loop never starts.
 | --- | --- | --- |
 | ok | default | `shared-before-launch-nil=1`, `will 1 main=1 shared=1 state=1 opts=0`, `did 1 after-will=1 delegate-identity=1 class=UIApplication`, `state-active=1`, `state-inactive=1`, `timer`, `terminate will=1 did=1`; exit 0 |
 | app-subclass | principal ShapeApplication (overrides `-init`), delegate ShapeDelegate (a UIResponder with did-finish and terminate only) | `shape did main=1 init=1 class=ShapeApplication shared=1 delegate-identity=1 delegate-class=ShapeDelegate state=1`, `shape terminate init=1`; exit 0 |
+| self-delegate | one UIApplication subclass named as both principal and delegate (documented: the subclass may be its own delegate) | `self did init=1 delegate-is-app=1 shared-is-app=1`; exit 0. Before the fix a second instance was created (init=2, delegate-is-app=0) |
 | nil-delegate | no delegate class | `nil-delegate shared=1 delegate-nil=1`; exit 0 |
 | bad-principal | principal NSObject | cause names the principal class; no will/did |
 | bad-delegate, missing-delegate | delegate does not conform / unknown name | cause names the delegate class; no will/did |

@@ -146,7 +146,10 @@ int UIApplicationMain(int argc, char **argv, NSString *principalClassName, NSStr
     bridge = appKitBridge;
     guarded(@"application or delegate init", ^{
         sharedApplication = [[principal alloc] init];
-        if (delegateClass != Nil) {
+        if (delegateClass == principal) {
+            // The docs let a UIApplication subclass be its own delegate.
+            appKitBridge.delegateOwner = sharedApplication;
+        } else if (delegateClass != Nil) {
             appKitBridge.delegateOwner = [[delegateClass alloc] init];
         }
     });
