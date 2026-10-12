@@ -6,6 +6,7 @@
 #include <semaphore.h>
 #include <locale.h>
 #include <unistd.h>
+#include <pthread.h>
 #include "elfcalls.h"
 #include "threads.h"
 #include <sys/un.h>
@@ -86,6 +87,9 @@ static int __dserver_process_lifetime_pipe_refresh() {
 
 void elfcalls_make(struct elf_calls* calls)
 {
+	extern void __mldr_fork_prepare(void);
+	extern void __mldr_fork_complete(void);
+	pthread_atfork(__mldr_fork_prepare, __mldr_fork_complete, __mldr_fork_complete);
 	calls->dlopen = dlopen_simple;
 	calls->dlclose = dlclose;
 	calls->dlsym = dlsym;
@@ -100,7 +104,16 @@ void elfcalls_make(struct elf_calls* calls)
 	calls->darling_thread_get_stack = __darling_thread_get_stack;
 
 	calls->get_errno = get_errno;
-	calls->exit = exit;
+	// darling-lol: the guest's `exit()` has already run its own
+	// `__cxa_finalize`/atexit handlers by the time the exit syscall
+	// reaches `native_exit`. Using the host `exit()` here ALSO runs the
+	// host libc's atexit handlers, which include host Mesa/lavapipe
+	// (`libgallium`) thread-pool teardown. In a forked child the worker
+	// threads don't exist, so that teardown blocks forever in
+	// `pthread_cond_wait` and the parent's `wait4` never returns
+	// (crashpad::SpawnSubprocess hang). The exit syscall must not run
+	// atexit handlers; use `_exit`.
+	calls->exit = _exit;
 
 	calls->malloc = malloc;
 	calls->free = free;
@@ -126,4 +139,5 @@ void elfcalls_make(struct elf_calls* calls)
 	calls->dserver_get_process_lifetime_pipe = __dserver_get_process_lifetime_pipe;
 	calls->dserver_process_lifetime_pipe_refresh = __dserver_process_lifetime_pipe_refresh;
 	calls->dserver_close_process_lifetime_pipe = __mldr_close_process_lifetime_pipe;
+	calls->fork = fork;
 }

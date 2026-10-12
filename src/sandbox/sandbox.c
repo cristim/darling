@@ -10,7 +10,13 @@ const enum sandbox_filter_type SANDBOX_CHECK_NO_REPORT = SANDBOX_FILTER_NONE;
 
 int sandbox_init(const char *profile, uint64_t flags, char **errorbuf)
 {
-	*errorbuf = strdup("Not implemented");
+	/* darling-lol: no seatbelt enforcement exists, so init trivially
+	 * succeeds. Must tolerate errorbuf==NULL (Chromium passes NULL) and
+	 * report no error on success; the old code crashed on NULL and left a
+	 * bogus "Not implemented" error on success. */
+	if (errorbuf != NULL) {
+		*errorbuf = NULL;
+	}
 	return 0;
 }
 
@@ -51,18 +57,36 @@ void sandbox_free_error(char *errorbuf)
 
 int sandbox_init_with_parameters(const char *profile, uint64_t flags, const char *const parameters[], char **errorbuf)
 {
-	*errorbuf = strdup("Not implemented");
+	/* darling-lol: see sandbox_init. */
+	if (errorbuf != NULL) {
+		*errorbuf = NULL;
+	}
 	return 0;
 }
 
 int sandbox_init_with_extensions(const char *profile, uint64_t flags, const char *const extensions[], char **errorbuf)
 {
-	*errorbuf = strdup("Not implemented");
+	/* darling-lol: see sandbox_init. Extensions are accepted and ignored. */
+	if (errorbuf != NULL) {
+		*errorbuf = NULL;
+	}
 	return 0;
 }
 
 int sandbox_check(pid_t pid, const char *operation, enum sandbox_filter_type type, ...)
 {
+	/* darling-lol: operation==NULL is the canonical "am I sandboxed?"
+	 * probe (Chromium: sandbox_check(getpid(), NULL, SANDBOX_FILTER_NONE)
+	 * "returns 1 if sandboxed", and ContentMainRunnerImpl CHECKs
+	 * Seatbelt::IsSandboxed() in every sandboxed child -- a 0 here
+	 * suicided all helpers/GPU with a silent UD2). Since init always
+	 * "succeeds", consistently report sandboxed (1). Any other query
+	 * keeps 0 (allowed), as nothing is enforced. */
+	(void)pid;
+	if (operation == NULL) {
+		return 1;
+	}
+	(void)type;
 	return 0;
 }
 
@@ -84,42 +108,56 @@ int sandbox_unsuspend(void)
 
 int sandbox_issue_extension(const char *path, char **ext_token)
 {
-	return -1;
+	/* darling-lol: no enforcement; hand out a dummy token callers can
+	 * consume/release. */
+	if (ext_token != NULL) {
+		*ext_token = strdup("darling-sandbox-stub");
+	}
+	return 0;
 }
 
 int sandbox_issue_fs_extension(const char *path, uint64_t flags, char **ext_token)
 {
-	return -1;
+	if (ext_token != NULL) {
+		*ext_token = strdup("darling-sandbox-stub");
+	}
+	return 0;
 }
 
 int sandbox_issue_fs_rw_extension(const char *path, char **ext_token)
 {
-	return -1;
+	if (ext_token != NULL) {
+		*ext_token = strdup("darling-sandbox-stub");
+	}
+	return 0;
 }
 
 int sandbox_issue_mach_extension(const char *name, char **ext_token)
 {
-	return -1;
+	if (ext_token != NULL) {
+		*ext_token = strdup("darling-sandbox-stub");
+	}
+	return 0;
 }
 
 int sandbox_consume_extension(const char *path, const char *ext_token)
 {
-	return -1;
+	return 0;
 }
 
 int sandbox_consume_fs_extension(const char *ext_token, char **path)
 {
-	return -1;
+	return 0;
 }
 
 int sandbox_consume_mach_extension(const char *ext_token, char **name)
 {
-	return -1;
+	return 0;
 }
 
 int sandbox_release_fs_extension(const char *ext_token)
 {
-	return -1;
+	return 0;
 }
 
 int sandbox_container_path_for_pid(pid_t pid, char *buffer, size_t bufsize)
@@ -129,7 +167,9 @@ int sandbox_container_path_for_pid(pid_t pid, char *buffer, size_t bufsize)
 
 int sandbox_wakeup_daemon(char **errorbuf)
 {
-	*errorbuf = strdup("Not implemented");
+	if (errorbuf != NULL) {
+		*errorbuf = NULL;
+	}
 	return -1;
 }
 

@@ -21,7 +21,47 @@
 
 #import <Foundation/Foundation.h>
 
+#import "ODLocalDirectory.h"
+
 @implementation ODSession
+
++ (ODSession *)defaultSession
+{
+    static ODSession *shared;
+    static dispatch_once_t once;
+
+    dispatch_once(&once, ^{
+        shared = [[ODSession alloc] init];
+    });
+    return shared;
+}
+
++ (instancetype)sessionWithOptions:(NSDictionary *)options error:(NSError **)error
+{
+    return [[[self alloc] initWithOptions: options error: error] autorelease];
+}
+
+- (instancetype)initWithOptions:(NSDictionary *)options error:(NSError **)error
+{
+    if (error != NULL)
+        *error = nil;
+
+    // only the local directory exists; there is no proxy to connect through
+    if ([options count] != 0) {
+        if (error != NULL)
+            *error = ODLocalError(kODErrorSessionProxyCommunicationError);
+        [self release];
+        return nil;
+    }
+    return [self init];
+}
+
+- (NSArray *)nodeNamesAndReturnError:(NSError **)error
+{
+    if (error != NULL)
+        *error = nil;
+    return @[ODLocalNodeName];
+}
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {

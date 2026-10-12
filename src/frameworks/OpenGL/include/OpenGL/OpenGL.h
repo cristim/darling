@@ -8,6 +8,7 @@
 #endif
 
 #include <OpenGL/CGLTypes.h>
+#include <IOSurface/IOSurfaceRef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,8 @@ CGL_EXPORT CGLError CGLUnlockContext(CGLContextObj context);
 CGL_EXPORT CGLError CGLSetCurrentContext(CGLContextObj ctx);
 CGL_EXPORT CGLError CGLSetFullScreen(CGLContextObj ctx);
 CGL_EXPORT CGLContextObj CGLGetCurrentContext(void);
+CGL_EXPORT CGLError CGLGetVirtualScreen(CGLContextObj ctx, GLint *screen);
+CGL_EXPORT CGLError CGLSetVirtualScreen(CGLContextObj ctx, GLint screen);
 
 CGL_EXPORT CGLError CGLSetParameter(CGLContextObj context, CGLContextParameter parameter, const GLint *value);
 CGL_EXPORT CGLError CGLGetParameter(CGLContextObj context, CGLContextParameter parameter, GLint *value);
@@ -40,9 +43,9 @@ CGL_EXPORT CGLError CGLDestroyPixelFormat(CGLPixelFormatObj pixelFormat);
 CGL_EXPORT GLuint CGLGetPixelFormatRetainCount(CGLPixelFormatObj pixelFormat);
 CGL_EXPORT CGLError CGLDescribePixelFormat(CGLPixelFormatObj pixelFormat, GLint screenNumber, CGLPixelFormatAttribute attribute, GLint *valuep);
 
-CGL_EXPORT CGLError CGLQueryRendererInfo(unsigned long display_mask, CGLRendererInfoObj *rend, long *nrend);
+CGL_EXPORT CGLError CGLQueryRendererInfo(GLuint display_mask, CGLRendererInfoObj *rend, GLint *nrend);
 CGL_EXPORT CGLError CGLDestroyRendererInfo(CGLRendererInfoObj rend);
-CGL_EXPORT CGLError CGLDescribeRenderer(CGLRendererInfoObj rend, long rend_num, CGLRendererProperty prop, long *value);
+CGL_EXPORT CGLError CGLDescribeRenderer(CGLRendererInfoObj rend, GLint rend_num, CGLRendererProperty prop, GLint *value);
 
 CGL_EXPORT CGLError CGLCreatePBuffer(GLsizei width, GLsizei height, GLenum target, GLenum internalFormat, GLint maxDetail, CGLPBufferObj *pbuffer);
 CGL_EXPORT CGLError CGLDescribePBuffer(CGLPBufferObj pbuffer, GLsizei *width, GLsizei *height, GLenum *target, GLenum *internalFormat, GLint *mipmap);
@@ -53,6 +56,13 @@ CGL_EXPORT CGLError CGLDestroyPBuffer(CGLPBufferObj pbuffer);
 CGL_EXPORT CGLError CGLGetPBuffer(CGLContextObj context, CGLPBufferObj *pbuffer, GLenum *face, GLint *level, GLint *screen);
 CGL_EXPORT CGLError CGLSetPBuffer(CGLContextObj context, CGLPBufferObj pbuffer, GLenum face, GLint level, GLint screen);
 CGL_EXPORT CGLError CGLTexImagePBuffer(CGLContextObj context, CGLPBufferObj pbuffer, GLenum sourceBuffer);
+CGL_EXPORT CGLError CGLTexImageIOSurface2D(CGLContextObj context, GLenum target,
+    GLenum internalFormat, GLsizei width, GLsizei height, GLenum format,
+    GLenum type, IOSurfaceRef ioSurface, GLuint plane);
+/* Darling extension used by QuartzCore's remote-layer fallback.  Real CGL
+ * texture storage is bidirectionally backed by IOSurface; our Mesa fallback
+ * must explicitly copy rendered texture pixels back to the surface. */
+CGL_EXPORT CGLError CGLReadbackIOSurface(IOSurfaceRef ioSurface);
 
 #ifdef __cplusplus
 }

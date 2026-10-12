@@ -20,5 +20,14 @@
 #include <Foundation/Foundation.h>
 
 @interface CLLocationManager : NSObject
+{
+	id _delegate;
+}
+
+/* darling-lol: real property so callers (Electron's device-permission
+ * path) get a proper accessor instead of falling through to the stub
+ * forwardInvocation, whose 0-arg signature raised
+ * `NSForwardSignatureError: invoked with 3 args, but 2 expected`. */
+@property (nonatomic, assign) id delegate;
 
 @end

@@ -85,3 +85,10 @@ TISInputSourceRef TISCopyCurrentASCIICapableKeyboardLayoutInputSource(void)
 
     return NULL;
 }
+
+CFArrayRef TISCreateASCIICapableInputSourceList(void)
+{
+    /* Until ASCII-capable layouts can be enumerated, return an owned empty
+     * list. A NULL list would crash callers that unconditionally CFRelease. */
+    return CFArrayCreate(NULL, NULL, 0, &kCFTypeArrayCallBacks);
+}

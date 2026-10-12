@@ -25,6 +25,7 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 AudioHardwareStreamPAInput::AudioHardwareStreamPAInput(AudioHardwareImplPA* hw, AudioDeviceIOProc callback, void* clientData)
 : AudioHardwareStreamPA(hw, callback, clientData)
 {
+    initialize();
 	// m_dump.open("/tmp/dump.raw", std::ios_base::out | std::ios_base::binary);
 }
 
@@ -32,7 +33,6 @@ void AudioHardwareStreamPAInput::paStreamReadCB(pa_stream* s, size_t length, voi
 {
 	AudioHardwareStreamPAInput* This = static_cast<AudioHardwareStreamPAInput*>(self);
 
-	std::unique_lock<std::mutex> l(This->m_stopMutex);
 
 	if (!This->m_running)
 		return;
@@ -74,6 +74,7 @@ void AudioHardwareStreamPAInput::paStreamReadCB(pa_stream* s, size_t length, voi
 		// std::cout << "AudioHardwareStreamPAInput::paStreamReadCB(): bytes=" << nbytes << std::endl;
 		OSStatus status = This->m_callback(This->m_hw->id(), &fake, abl, &fake, nullptr, nullptr, This->m_clientData);
 
+        if (!This->m_running) return;
 		pa_stream_drop(This->m_stream);
 
 		if (status != noErr)

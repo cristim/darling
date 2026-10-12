@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <stdio.h>
 #include <darling/emulation/linux_premigration/ext/sys/inotify.h>
 
 static dispatch_queue_t g_fsEventsQueue = NULL;
@@ -68,6 +69,24 @@ static void rlPerform(void* info)
 	for (NSString* path in _pathsToWatch)
 	{
 		int wd = inotify_add_watch(_fd, [path UTF8String], IN_ATTRIB | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MODIFY | IN_MOVE);
+		/* darling-lol: a path that doesn't exist yet (e.g. /etc/hosts or
+		 * /etc/resolv.conf missing in the prefix) makes inotify_add_watch
+		 * return -1. Apple's FSEvents tolerates unwatchable paths and the
+		 * stream still starts; Chromium (dns_config_service_posix) treats
+		 * a failed start as fatal for its DNS watcher. Skip failures
+		 * instead of inserting a bogus -1 wd, and remember the path so a
+		 * later event on the directory can still be reported. */
+		if (wd < 0)
+		{
+			if (getenv("DARLING_LOL_FSEVLOG") != NULL)
+			{
+				char b[512];
+				int n = snprintf(b, sizeof(b), "FSEV add_watch failed: %s (errno=%d)\n",
+						 [path UTF8String], errno);
+				if (n > 0) write(2, b, n);
+			}
+			continue;
+		}
 		[wdmap setObject: path
 				forKey: [NSNumber numberWithInt: wd]];
 	}

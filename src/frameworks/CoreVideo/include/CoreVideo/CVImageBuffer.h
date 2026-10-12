@@ -30,6 +30,7 @@ extern const CFStringRef kCVImageBufferTransferFunction_Linear;
 extern const CFStringRef kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ;
 extern const CFStringRef kCVImageBufferTransferFunction_SMPTE_ST_428_1;
 extern const CFStringRef kCVImageBufferTransferFunction_SMPTE_C;
+extern const CFStringRef kCVImageBufferTransferFunction_sRGB;
 
 extern CFStringRef const kCVImageBufferPixelAspectRatioHorizontalSpacingKey;
 extern CFStringRef const kCVImageBufferPixelAspectRatioVerticalSpacingKey;
@@ -43,5 +44,7 @@ extern CFStringRef const kCVImageBufferColorPrimaries_SMPTE_C;
 extern CFStringRef const kCVImageBufferTransferFunction_ITU_R_709_2;
 extern CFStringRef const kCVImageBufferTransferFunction_SMPTE_240M_1995;
 extern CFStringRef const kCVImageBufferTransferFunction_UseGamma;
+extern const CFStringRef kCVImageBufferContentLightLevelInfoKey;
+extern const CFStringRef kCVImageBufferMasteringDisplayColorVolumeKey;
 
 #endif // _COREVIDEO_CVIMAGEBUFFER_H_

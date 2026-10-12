@@ -38,6 +38,8 @@ public:
 		const void* inQualifierData, UInt32 inDataSize, const void* inData) override;
 	
 	void getPAContext(void (^cb)(pa_context*));
+	void syncPA(void (^block)(void));
+	OSStatus stop(AudioDeviceIOProcID inProcID) override;
 	static pa_sample_spec paSampleSpecForASBD(const AudioStreamBasicDescription& asbd, bool* convertSignedUnsigned = nullptr);
 protected:
 	AudioHardwareStream* createStream(AudioDeviceIOProc callback, void* clientData) override;
@@ -49,4 +51,3 @@ private:
 };
 
 #endif
-

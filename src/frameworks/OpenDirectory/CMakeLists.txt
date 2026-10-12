@@ -21,6 +21,7 @@ add_framework(OpenDirectory
 
     SOURCES
         src/OpenDirectory.m
+        src/ODLocalDirectory.m
         src/NSODSession.m
         src/ODSession.m
         src/NSODNode.m

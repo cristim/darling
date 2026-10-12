@@ -25,6 +25,7 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <mutex>
 #include <memory>
 #include <stdint.h>
+#include <vector>
 
 class AUHAL : public AUBase
 {
@@ -32,6 +33,9 @@ public:
 	AUHAL(AudioComponentInstance inInstance, bool supportRecording = true);
 	~AUHAL();
 
+    UInt32 GetChannelLayoutTags(AudioUnitScope scope,AudioUnitElement element,AudioChannelLayoutTag* tags) override;
+    UInt32 GetAudioChannelLayout(AudioUnitScope scope,AudioUnitElement element,AudioChannelLayout* layout,Boolean& writable) override;
+    OSStatus SetAudioChannelLayout(AudioUnitScope scope,AudioUnitElement element,const AudioChannelLayout* layout) override;
 	bool CanScheduleParameters() const override;
 	bool StreamFormatWritable(AudioUnitScope scope, AudioUnitElement element) override;
 	OSStatus Version() override;
@@ -76,6 +80,11 @@ protected:
 	// TODO: Prepare for non-interleaved audio
 	std::unique_ptr<uint8_t[]> m_buffer;
 	size_t m_bufferSize = 0, m_bufferUsed = 0;
+
+    // Playback callbacks run serially on the device's PulseAudio queue.
+    // Keep planar conversion storage across callbacks and start/stop cycles.
+    std::vector<unsigned char> m_playbackSamples;
+    std::vector<unsigned char> m_playbackBufferList;
 };
 
 #endif

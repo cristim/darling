@@ -30,6 +30,8 @@ public:
 
 	void suspend();
 	void resume();
+	void sync(void (^block)(void));
+	void async(void (^block)(void));
 	
 	pa_mainloop_api* getAPI();
 private:
@@ -50,6 +52,7 @@ private:
 	static void defer_event_fire(void* context);
 private:
 	dispatch_queue_t m_queue;
+	dispatch_group_t m_sources;
 	pa_mainloop_api m_api = {0};
 	bool m_suspended = true;
 };

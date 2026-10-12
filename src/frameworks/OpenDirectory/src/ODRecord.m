@@ -19,7 +19,63 @@
 
 #import <OpenDirectory/ODRecord.h>
 
+#import "ODLocalDirectory.h"
+
 @implementation ODRecord
+{
+    NSDictionary *_attributes;
+}
+
+ODRecord *ODLocalRecordCreate(NSDictionary *attributes)
+{
+    ODRecord *record = [[ODRecord alloc] init];
+
+    if (record != nil)
+        record->_attributes = [attributes copy];
+    return record;
+}
+
+- (void)dealloc
+{
+    [_attributes release];
+    [super dealloc];
+}
+
+- (NSString *)recordType
+{
+    return [_attributes[@"dsAttrTypeStandard:RecordType"] firstObject];
+}
+
+- (NSString *)recordName
+{
+    return [_attributes[@"dsAttrTypeStandard:RecordName"] firstObject];
+}
+
+- (NSArray *)valuesForAttribute:(ODAttributeType)attribute error:(NSError **)error
+{
+    if (error != NULL)
+        *error = nil;
+    if (attribute == nil)
+        return nil;
+    return _attributes[attribute] ?: @[];
+}
+
+- (NSDictionary *)recordDetailsForAttributes:(NSArray *)attributes error:(NSError **)error
+{
+    if (error != NULL)
+        *error = nil;
+    if (attributes == nil || [attributes containsObject: @"dsAttributesAll"]
+        || [attributes containsObject: @"dsAttributesStandardAll"])
+        return _attributes;
+
+    NSMutableDictionary *details = [NSMutableDictionary dictionary];
+    for (id attribute in attributes) {
+        NSArray *values = _attributes[attribute];
+        if (values != nil)
+            details[attribute] = values;
+    }
+    return details;
+}
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector
 {

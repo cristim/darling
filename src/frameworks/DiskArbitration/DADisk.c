@@ -82,6 +82,41 @@ DADiskInitialize (void)
 	_kDADiskTypeID = _CFRuntimeRegisterClass (&DADiskClass);
 }
 
+CFArrayRef kDADiskDescriptionWatchVolumePath = NULL;
+CFArrayRef kDADiskDescriptionWatchVolumeName = NULL;
+CFDictionaryRef kDADiskDescriptionMatchMediaWhole = NULL;
+CFDictionaryRef kDADiskDescriptionMatchMediaUnformatted = NULL;
+CFDictionaryRef kDADiskDescriptionMatchVolumeMountable = NULL;
+CFDictionaryRef kDADiskDescriptionMatchVolumeUnrecognized = NULL;
+
+__attribute__((constructor))
+static void
+DADiskInitializeWatchArrays (void)
+{
+	const void *pathKeys[] = { kDADiskDescriptionVolumePathKey };
+	const void *nameKeys[] = { kDADiskDescriptionVolumeNameKey };
+	kDADiskDescriptionWatchVolumePath = CFArrayCreate(NULL, pathKeys, 1,
+		&kCFTypeArrayCallBacks);
+	kDADiskDescriptionWatchVolumeName = CFArrayCreate(NULL, nameKeys, 1,
+		&kCFTypeArrayCallBacks);
+	kDADiskDescriptionMatchMediaWhole = CFDictionaryCreate(NULL,
+		(const void **)&kDADiskDescriptionMediaWholeKey,
+		(const void **)&kCFBooleanTrue, 1,
+		&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	kDADiskDescriptionMatchMediaUnformatted = CFDictionaryCreate(NULL,
+		(const void **)&kDADiskDescriptionMediaContentKey,
+		(const void **)&kCFBooleanTrue, 1,
+		&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	kDADiskDescriptionMatchVolumeMountable = CFDictionaryCreate(NULL,
+		(const void **)&kDADiskDescriptionVolumeMountableKey,
+		(const void **)&kCFBooleanTrue, 1,
+		&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	kDADiskDescriptionMatchVolumeUnrecognized = CFDictionaryCreate(NULL,
+		(const void **)&kDADiskDescriptionVolumeKindKey,
+		(const void **)&kCFBooleanTrue, 1,
+		&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+}
+
 #define DADISK_SIZE sizeof(struct __DADisk) - sizeof(CFRuntimeBase)
 
 static void

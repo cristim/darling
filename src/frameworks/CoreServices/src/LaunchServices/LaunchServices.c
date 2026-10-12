@@ -21,7 +21,11 @@
 #include <LaunchServices/LaunchServicesPriv.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <launch_priv.h>
+#include <string.h>
+#include <errno.h>
+#include <spawn.h>
+
+extern char** environ;
 
 static void get_main_executable_info(CFURLRef appURL, CFStringRef *exec, CFStringRef *bundleName);
 
@@ -108,8 +112,14 @@ OSStatus _LSLaunchApplication(CFURLRef appPath)
 		CFRelease(url_plus_exec);
 		url_plus_exec = CFURLCreateCopyAppendingPathComponent(kCFAllocatorDefault, pre, executable, FALSE);
 		CFRelease(pre);
-		/* Launch the executable */
-		executable = CFURLGetString(url_plus_exec);
+		/* Launch the executable. NB: CFURLGetString would give back a
+		 * percent-encoded file:// URL, which is not spawnable; extract the
+		 * POSIX path instead. */
+		CFRelease(executable);
+		executable = CFURLCopyFileSystemPath(url_plus_exec, kCFURLPOSIXPathStyle);
+		CFRelease(url_plus_exec);
+		if (executable == NULL)
+			return 1;
 
 		/* Try to use CFBundleName first */
 		if (bundleName == NULL)
@@ -122,15 +132,19 @@ OSStatus _LSLaunchApplication(CFURLRef appPath)
 		CFStringGetFileSystemRepresentation(executable, exec, execSize);
 		argv[0] = exec;
 		argv[1] = NULL;
-		pid = spawn_via_launchd(name, (const char *const *)argv, NULL);
-		if (pid < 0)
+		/* Launch the executable directly. The macOS-correct route is
+		 * spawn_via_launchd (launchd job registration, -W waiting, PSN
+		 * tracking), but Darling's vproc_mig_spawn2 currently fails the
+		 * request (EIO) and nothing in-tree exercises it, so spawn the
+		 * child ourselves via the emulated posix_spawn. */
+		int err = posix_spawn(&pid, exec, NULL, NULL, argv, environ);
+		if (err != 0)
 		{
-			printf("%s: Failed to spawn via launchd\n", exec);
+			printf("%s: Failed to posix_spawn: %s\n", exec, strerror(err));
 			return 1;
 		}
 		free(name);
 		free(exec);
-		CFRelease(url_plus_exec);
 		CFRelease(executable);
 
 	}
@@ -183,4 +197,26 @@ err:
 err_pre_info:
 	CFRelease(rs);
 	CFRelease(info_plist_url);
+}
+
+OSStatus LSSetDefaultHandlerForURLScheme(CFStringRef inURLScheme, CFStringRef inHandlerBundleID)
+{
+	/* Darling has no shared LaunchServices database yet; accept and
+	 * ignore (callers such as Discord's URL-scheme registration only
+	 * need the call to succeed). */
+	(void)inURLScheme;
+	(void)inHandlerBundleID;
+	if (verbose)
+		printf("STUB: LSSetDefaultHandlerForURLScheme\n");
+	return noErr;
+}
+
+OSStatus LSSetDefaultRoleHandlerForContentType(CFStringRef inContentType, LSRolesMask inRole, CFStringRef inHandlerBundleID)
+{
+	(void)inContentType;
+	(void)inRole;
+	(void)inHandlerBundleID;
+	if (verbose)
+		printf("STUB: LSSetDefaultRoleHandlerForContentType\n");
+	return noErr;
 }

@@ -22,13 +22,16 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <AudioToolbox/AudioOutputUnit.h>
 #include <CarbonCore/MacErrors.h>
 #include "ComponentDispatch.h"
+#include "../AudioTrace.h"
 
 const CFStringRef kAudioComponentRegistrationsChangedNotification = CFSTR("AudioComponentRegistrationsChangedNotification");
 const CFStringRef kAudioComponentInstanceInvalidationNotification = CFSTR("AudioComponentInstanceInvalidationNotification");
 
 OSStatus AudioOutputUnitStart(AudioUnit ci)
 {
-    return dispatchCall(ci, kAudioOutputUnitStartSelect);
+    OSStatus status = dispatchCall(ci, kAudioOutputUnitStartSelect);
+    rclolAudioTrace("UNIT_START unit=%p status=%d\n", (void*) ci, (int) status);
+    return status;
 }
 
 OSStatus AudioOutputUnitStop(AudioUnit ci)
@@ -38,7 +41,9 @@ OSStatus AudioOutputUnitStop(AudioUnit ci)
 
 OSStatus AudioUnitInitialize(AudioUnit inUnit)
 {
-    return dispatchCall(inUnit, kAudioUnitInitializeSelect);
+    OSStatus status = dispatchCall(inUnit, kAudioUnitInitializeSelect);
+    rclolAudioTrace("UNIT_INITIALIZE unit=%p status=%d\n", (void*) inUnit, (int) status);
+    return status;
 }
 
 OSStatus AudioUnitUninitialize(AudioUnit inUnit)
@@ -54,7 +59,9 @@ AudioUnitGetPropertyInfo(AudioUnit inUnit,
     UInt32 * _Nullable outDataSize,
     Boolean * _Nullable outWritable)
 {
-    return dispatchCall(inUnit, kAudioUnitGetPropertyInfoSelect, inID, inScope, inElement, outDataSize, outWritable);
+    OSStatus status = dispatchCall(inUnit, kAudioUnitGetPropertyInfoSelect, inID, inScope, inElement, outDataSize, outWritable);
+    rclolAudioTrace("UNIT_PROPINFO unit=%p prop=%u scope=%u elem=%u status=%d\n", (void*) inUnit, (unsigned) inID, (unsigned) inScope, (unsigned) inElement, (int) status);
+    return status;
 }
 
 OSStatus
@@ -65,7 +72,16 @@ AudioUnitGetProperty(AudioUnit inUnit,
     void * outData,
     UInt32 * ioDataSize)
 {
-    return dispatchCall(inUnit, kAudioUnitGetPropertySelect, inID, inScope, inElement, outData, ioDataSize);
+    OSStatus status = dispatchCall(inUnit, kAudioUnitGetPropertySelect, inID, inScope, inElement, outData, ioDataSize);
+    if (inID == 8 && status == noErr && outData && ioDataSize && *ioDataSize >= sizeof(AudioStreamBasicDescription))
+    {
+        const AudioStreamBasicDescription* d = static_cast<const AudioStreamBasicDescription*>(outData);
+        rclolAudioTrace("UNIT_GOT_FORMAT unit=%p scope=%u elem=%u rate=%.0f id=%08x flags=%08x bpf=%u ch=%u bits=%u\n",
+            (void*) inUnit, (unsigned) inScope, (unsigned) inElement, d->mSampleRate, (unsigned) d->mFormatID, (unsigned) d->mFormatFlags,
+            (unsigned) d->mBytesPerFrame, (unsigned) d->mChannelsPerFrame, (unsigned) d->mBitsPerChannel);
+    }
+    rclolAudioTrace("UNIT_GET unit=%p prop=%u scope=%u elem=%u status=%d\n", (void*) inUnit, (unsigned) inID, (unsigned) inScope, (unsigned) inElement, (int) status);
+    return status;
 }
 
 OSStatus
@@ -76,7 +92,16 @@ AudioUnitSetProperty(AudioUnit inUnit,
     const void * _Nullable inData,
     UInt32 inDataSize)
 {
-    return dispatchCall(inUnit, kAudioUnitSetPropertySelect, inID, inScope, inElement, inData, inDataSize);
+    if (inID == 8 /* kAudioUnitProperty_StreamFormat */ && inData && inDataSize >= sizeof(AudioStreamBasicDescription))
+    {
+        const AudioStreamBasicDescription* d = static_cast<const AudioStreamBasicDescription*>(inData);
+        rclolAudioTrace("UNIT_SET_FORMAT unit=%p scope=%u elem=%u rate=%.0f id=%08x flags=%08x bpp=%u fpp=%u bpf=%u ch=%u bits=%u\n",
+            (void*) inUnit, (unsigned) inScope, (unsigned) inElement, d->mSampleRate, (unsigned) d->mFormatID, (unsigned) d->mFormatFlags,
+            (unsigned) d->mBytesPerPacket, (unsigned) d->mFramesPerPacket, (unsigned) d->mBytesPerFrame, (unsigned) d->mChannelsPerFrame, (unsigned) d->mBitsPerChannel);
+    }
+    OSStatus status = dispatchCall(inUnit, kAudioUnitSetPropertySelect, inID, inScope, inElement, inData, inDataSize);
+    rclolAudioTrace("UNIT_SET unit=%p prop=%u scope=%u elem=%u size=%u status=%d\n", (void*) inUnit, (unsigned) inID, (unsigned) inScope, (unsigned) inElement, (unsigned) inDataSize, (int) status);
+    return status;
 }
 
 OSStatus
@@ -103,7 +128,9 @@ AudioUnitAddRenderNotify(AudioUnit inUnit,
          AURenderCallback inProc,
          void * _Nullable inProcUserData)
 {
-    return dispatchCall(inUnit, kAudioUnitAddRenderNotifySelect, inProc, inProcUserData);
+    OSStatus status = dispatchCall(inUnit, kAudioUnitAddRenderNotifySelect, inProc, inProcUserData);
+    rclolAudioTrace("UNIT_ADD_RENDER_NOTIFY unit=%p status=%d\n", (void*) inUnit, (int) status);
+    return status;
 }
 
 OSStatus

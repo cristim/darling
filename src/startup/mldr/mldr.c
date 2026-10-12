@@ -154,7 +154,7 @@ int main(int argc, char** argv, char** envp)
 	// allow any process to ptrace us
 	// the only process we really care about being able to do this is the server,
 	// but we can't just use the server's PID, since it lies outside our PID namespace.
-	ptrace(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+	prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
 
 	process_special_env(&mldr_load_results);
 
@@ -563,6 +563,16 @@ static socket_bitmap_t socket_bitmap = {
 	.highest = -1,
 };
 
+/* Host fork must preserve a consistent bitmap and an unlocked child mutex.
+ * These callbacks run through glibc fork, before guest RPC fork cleanup. */
+void __mldr_fork_prepare(void) {
+	pthread_mutex_lock(&socket_bitmap.mutex);
+}
+
+void __mldr_fork_complete(void) {
+	pthread_mutex_unlock(&socket_bitmap.mutex);
+}
+
 static int socket_bitmap_get(socket_bitmap_t* bitmap) {
 	int fd = -1;
 	bool updated = false;
@@ -673,7 +683,13 @@ static void socket_bitmap_put(socket_bitmap_t* bitmap, int socket) {
 				}
 			}
 
-			if ((bitmap->bits[index / 8] & (1 << (index % 8))) == 0) {
+			// darling-lol: the test was inverted (`== 0`, i.e. it stopped at a FREE slot and shrank past slots that were
+			// IN USE). After a whole trailing byte of slots had been released, the length collapsed below live
+			// sockets; the next threads were then handed descriptor numbers that still belonged to running threads,
+			// dup2() replaced those threads' RPC sockets, and when the newcomer exited the older thread was left with a
+			// closed descriptor (EBADF on its next call, process abort). Seen as LeagueClient dying ~85-110 s after start:
+			// slot 71 (fd 524216), held by a long-sleeping thread, given to a second thread (logs/rpc-fd-history.log).
+			if ((bitmap->bits[index / 8] & (1 << (index % 8))) != 0) {
 				// this bit is in-use, so we can't shrink any further
 				break;
 			}
@@ -685,12 +701,20 @@ static void socket_bitmap_put(socket_bitmap_t* bitmap, int socket) {
 
 		if (old_byte_size != new_byte_size) {
 			// we can free one or more bytes from the bitmap
-			void* ptr = realloc(bitmap->bits, new_byte_size);
-			if (!ptr) {
-				goto out;
-			}
+			if (new_byte_size == 0) {
+				// darling-lol: realloc(ptr, 0) frees the block and returns NULL; the old code then kept the dangling
+				// pointer and the next allocation aborted with a double free. (Unreachable while the shrink test
+				// above was inverted; reached as soon as a process released its last socket.)
+				free(bitmap->bits);
+				bitmap->bits = NULL;
+			} else {
+				void* ptr = realloc(bitmap->bits, new_byte_size);
+				if (!ptr) {
+					goto out;
+				}
 
-			bitmap->bits = ptr;
+				bitmap->bits = ptr;
+			}
 		}
 	}
 

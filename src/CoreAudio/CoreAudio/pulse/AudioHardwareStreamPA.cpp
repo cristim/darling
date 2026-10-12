@@ -26,6 +26,11 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 AudioHardwareStreamPA::AudioHardwareStreamPA(AudioHardwareImplPA* hw, AudioDeviceIOProc callback, void* clientData)
 : AudioHardwareStream(hw, false), m_callback(callback), m_clientData(clientData)
 {
+}
+
+void AudioHardwareStreamPA::initialize()
+{
+    auto* hw=static_cast<AudioHardwareImplPA*>(m_hw);
 	hw->getPAContext(^(pa_context* context) {
 		if (!context)
 		{
@@ -42,6 +47,7 @@ AudioHardwareStreamPA::AudioHardwareStreamPA(AudioHardwareImplPA* hw, AudioDevic
 		}
 
 		m_stream = pa_stream_new(context, "CoreAudio", &spec, nullptr);
+        if(!m_stream) return;
 
 		//pa_stream_set_state_callback(m_stream, [](pa_stream *s, void *userdata) {
 			//std::cout << "Stream state: " << pa_stream_get_state(s) << std::endl;
@@ -59,8 +65,8 @@ AudioHardwareStreamPA::AudioHardwareStreamPA(AudioHardwareImplPA* hw, AudioDevic
 
 AudioHardwareStreamPA::~AudioHardwareStreamPA()
 {
-	if (m_stream)
-		pa_stream_unref(m_stream);
+    auto* hw=static_cast<AudioHardwareImplPA*>(m_hw);
+    hw->syncPA(^{if(m_stream) {pa_stream_unref(m_stream);m_stream=nullptr;}});
 }
 
 void AudioHardwareStreamPA::start()
@@ -70,9 +76,20 @@ void AudioHardwareStreamPA::start()
 
 void AudioHardwareStreamPA::stop()
 {
-	std::unique_lock<std::mutex> l(m_stopMutex);
-	pa_stream_disconnect(m_stream);
-	m_running = false;
+    auto* hw=static_cast<AudioHardwareImplPA*>(m_hw);
+    hw->syncPA(^{
+        // All stream operations and callbacks are serialized by syncPA.
+        // A callback may call stop() itself; taking its mutex here deadlocks.
+        m_running=false;
+        if(m_stream) {
+            // Disconnect may leave queued protocol work holding a stream ref.
+            // Detach client callbacks before the C++ owner can be destroyed.
+            pa_stream_set_write_callback(m_stream,nullptr,nullptr);
+            pa_stream_set_read_callback(m_stream,nullptr,nullptr);
+            pa_stream_set_state_callback(m_stream,nullptr,nullptr);
+            pa_stream_disconnect(m_stream);
+        }
+    });
 }
 
 // This function seems to only convert unsigned to signed, but it works both ways in practice

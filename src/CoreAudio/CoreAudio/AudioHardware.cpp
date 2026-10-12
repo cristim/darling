@@ -1,3 +1,4 @@
+#include "../AudioTrace.h"
 /*
 This file is part of Darling.
 
@@ -25,6 +26,9 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <CarbonCore/MacErrors.h>
 #include <dispatch/dispatch.h>
 #include <memory>
+#include <cstring>
+#include <cstdio>
+#include <cstdlib>
 #include <unordered_map>
 #include "stub.h"
 
@@ -38,7 +42,7 @@ static void initObjects()
 		g_objects.insert(std::make_pair(kAudioObjectSystemObject, std::make_unique<AudioHardwareImplPA>(kAudioObjectSystemObject)));
 		g_objects.insert(std::make_pair(kAudioObjectSystemObject + 1, std::make_unique<AudioHardwareImplPAOutput>(kAudioObjectSystemObject + 1)));
 		g_objects.insert(std::make_pair(kAudioObjectSystemObject + 2, std::make_unique<AudioHardwareImplPAInput>(kAudioObjectSystemObject + 2)));
-		g_objects.insert(std::make_pair(kAudioObjectSystemObject + 1, std::make_unique<AudioHardwareImplPAOutput>(kAudioObjectSystemObject + 3, "event")));
+		g_objects.insert(std::make_pair(kAudioObjectSystemObject + 3, std::make_unique<AudioHardwareImplPAOutput>(kAudioObjectSystemObject + 3, "event")));
 	});
 }
 
@@ -58,6 +62,35 @@ static AudioHardwareImpl* GetSystemObject()
 	return GetObject(kAudioObjectSystemObject);
 }
 
+// Stream IDs are distinct from their owning device IDs. Chromium enumerates
+// these objects to determine input/output direction before opening audio.
+static OSStatus GetStreamPropertyData(AudioObjectID id,
+    const AudioObjectPropertyAddress* property, UInt32* size, void* data)
+{
+    if (!property || !size) return paramErr;
+    AudioHardwareImpl* device=GetObject(id&0xffffu);
+    if (!device) return kAudioHardwareBadObjectError;
+    UInt32 value;
+    const void* source=&value;
+    UInt32 required=sizeof(value);
+    switch(property->mSelector) {
+    case kAudioStreamPropertyDirection:
+        value=device->id()==kAudioObjectSystemObject+2?1:0;break;
+    case kAudioStreamPropertyTerminalType:
+        value=0;break;
+    case kAudioStreamPropertyVirtualFormat:
+    case kAudioStreamPropertyPhysicalFormat:
+        source=&device->asbd();required=sizeof(AudioStreamBasicDescription);break;
+    default:return kAudioHardwareUnknownPropertyError;
+    }
+    if(data) {
+        if(*size<required) return kAudioHardwareBadPropertySizeError;
+        memcpy(data,source,required);
+    }
+    *size=required;
+    return noErr;
+}
+
 void AudioObjectShow(AudioObjectID inObjectID)
 {
 	AudioHardwareImpl* obj = GetObject(inObjectID);
@@ -68,6 +101,9 @@ void AudioObjectShow(AudioObjectID inObjectID)
 Boolean AudioObjectHasProperty(AudioObjectID inObjectID,
 		const AudioObjectPropertyAddress* inAddress)
 {
+    if((inObjectID&0xffff0000u)==0x44410000u) {
+        UInt32 size=0;return GetStreamPropertyData(inObjectID,inAddress,&size,nullptr)==noErr;
+    }
 	AudioHardwareImpl* obj = GetObject(inObjectID);
 	if (!obj)
 		return 0;
@@ -89,24 +125,50 @@ OSStatus AudioObjectGetPropertyDataSize(AudioObjectID inObjectID,
 		const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize,
 		const void* inQualifierData, UInt32* outDataSize)
 {
+    if((inObjectID&0xffff0000u)==0x44410000u)
+        return GetStreamPropertyData(inObjectID,inAddress,outDataSize,nullptr);
 	AudioHardwareImpl* obj = GetObject(inObjectID);
 	if (!obj)
 		return kAudioHardwareBadObjectError;
 	
-	return obj->getPropertyDataSize(inAddress, inQualifierDataSize,
-			inQualifierData, outDataSize);
+	OSStatus status=obj->getPropertyDataSize(inAddress,inQualifierDataSize,inQualifierData,outDataSize);
+    rclolAudioTrace("SIZE object=%u selector=%08x scope=%08x status=%d size=%u\n",inObjectID,inAddress->mSelector,inAddress->mScope,status,status?0:*outDataSize);
+    return status;
 }
 
 OSStatus AudioObjectGetPropertyData(AudioObjectID inObjectID,
 		const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize,
 		const void* inQualifierData, UInt32* ioDataSize, void* outData)
 {
+    if(inObjectID==kAudioObjectSystemObject && inAddress->mSelector==kAudioHardwarePropertyDeviceForUID) {
+        if(!outData || !ioDataSize || *ioDataSize<sizeof(AudioValueTranslation)) return kAudioHardwareBadPropertySizeError;
+        auto* value=static_cast<AudioValueTranslation*>(outData);
+        if(!value->mInputData || value->mInputDataSize!=sizeof(CFStringRef) || !value->mOutputData || value->mOutputDataSize<sizeof(AudioDeviceID)) return paramErr;
+        CFStringRef wanted=*static_cast<CFStringRef*>(value->mInputData);
+        AudioDeviceID found=kAudioObjectUnknown;
+        AudioObjectPropertyAddress property={kAudioDevicePropertyDeviceUID,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMaster};
+        for(AudioDeviceID id=kAudioObjectSystemObject+1;id<=kAudioObjectSystemObject+3;++id) {
+            CFStringRef uid=nullptr;UInt32 size=sizeof(uid);
+            if(GetObject(id)->getPropertyData(&property,0,nullptr,&size,&uid)==noErr && uid) {
+                bool match=CFEqual(uid,wanted);CFRelease(uid);
+                if(match) { found=id;break; }
+            }
+        }
+        *static_cast<AudioDeviceID*>(value->mOutputData)=found;
+        value->mOutputDataSize=sizeof(found);*ioDataSize=sizeof(*value);return noErr;
+    }
+    if((inObjectID&0xffff0000u)==0x44410000u)
+        return GetStreamPropertyData(inObjectID,inAddress,ioDataSize,outData);
 	AudioHardwareImpl* obj = GetObject(inObjectID);
 	if (!obj)
 		return kAudioHardwareBadObjectError;
 	
-	return obj->getPropertyData(inAddress, inQualifierDataSize, inQualifierData,
-			ioDataSize, outData);
+    static unsigned traceCount=0;
+    if(getenv("RCLOL_AUDIO_TRACE") && traceCount++<100)
+        fprintf(stderr,"AUDIO_HARDWARE_GET object=%u property=%08x scope=%08x\n",inObjectID,inAddress->mSelector,inAddress->mScope);
+	OSStatus status=obj->getPropertyData(inAddress,inQualifierDataSize,inQualifierData,ioDataSize,outData);
+    rclolAudioTrace("GET object=%u selector=%08x scope=%08x status=%d size=%u\n",inObjectID,inAddress->mSelector,inAddress->mScope,status,status?0:*ioDataSize);
+    return status;
 }
 
 OSStatus AudioObjectSetPropertyData(AudioObjectID inObjectID,
@@ -117,8 +179,9 @@ OSStatus AudioObjectSetPropertyData(AudioObjectID inObjectID,
 	if (!obj)
 		return kAudioHardwareBadObjectError;
 	
-	return obj->setPropertyData(inAddress, inQualifierDataSize, inQualifierData,
-			inDataSize, inData);
+	OSStatus status=obj->setPropertyData(inAddress,inQualifierDataSize,inQualifierData,inDataSize,inData);
+    rclolAudioTrace("SET object=%u selector=%08x scope=%08x status=%d\n",inObjectID,inAddress->mSelector,inAddress->mScope,status);
+    return status;
 }
 
 OSStatus AudioObjectAddPropertyListener(AudioObjectID inObjectID,
@@ -129,7 +192,9 @@ OSStatus AudioObjectAddPropertyListener(AudioObjectID inObjectID,
 	if (!obj)
 		return kAudioHardwareBadObjectError;
 	
-	return obj->addPropertyListener(inAddress, inListener, inClientData);
+	OSStatus status=obj->addPropertyListener(inAddress,inListener,inClientData);
+    rclolAudioTrace("ADD_LISTENER object=%u selector=%08x status=%d\n",inObjectID,inAddress->mSelector,status);
+    return status;
 }
 
 OSStatus AudioObjectRemovePropertyListener(AudioObjectID inObjectID,

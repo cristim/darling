@@ -1,6 +1,7 @@
 #ifndef _Carbon_TextInputSources_H_
 #define _Carbon_TextInputSources_H_
 #include <CoreFoundation/CFString.h>
+#include <CoreFoundation/CFArray.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +26,7 @@ extern TISInputSourceRef TISCopyCurrentKeyboardInputSource(void);
 extern void* TISGetInputSourceProperty(TISInputSourceRef inputSourceRef, CFStringRef key);
 
 extern TISInputSourceRef TISCopyCurrentASCIICapableKeyboardLayoutInputSource(void);
+extern CFArrayRef TISCreateASCIICapableInputSourceList(void);
 
 #ifdef __cplusplus
 }

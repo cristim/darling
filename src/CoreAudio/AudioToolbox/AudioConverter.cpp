@@ -22,13 +22,35 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <CarbonCore/MacErrors.h>
 #include <stdexcept>
 #include <cstring>
+#include <cstdlib>
+#include <cstdio>
+#include <mutex>
+#include <unordered_set>
+
+// Validate opaque-handle ownership before dereferencing a disposal argument.
+static std::mutex converterMutex;
+static std::unordered_set<AudioConverterRef> liveConverters;
+
+static bool audioTrace() {
+    static const bool enabled = std::getenv("RCLOL_AUDIO_TRACE") != nullptr;
+    return enabled;
+}
+
 
 OSStatus AudioConverterNew(const AudioStreamBasicDescription* inSourceFormat, const AudioStreamBasicDescription* inDestinationFormat, AudioConverterRef* outAudioConverter)
 {
-	return AudioConverter::create(inSourceFormat, inDestinationFormat, (AudioConverter**)outAudioConverter);
+    OSStatus status = AudioConverter::create(inSourceFormat, inDestinationFormat, (AudioConverter**)outAudioConverter);
+    if (status == noErr && outAudioConverter && *outAudioConverter) {
+        std::lock_guard<std::mutex> lock(converterMutex);
+        liveConverters.insert(*outAudioConverter);
+    }
+    if (audioTrace())
+        std::fprintf(stderr, "RIOT_AUDIO new status=%d converter=%p\n", status,
+            outAudioConverter ? *outAudioConverter : nullptr);
+    return status;
 }
 
-OSStatus AudioConverterNewSpecific(const AudioStreamBasicDescription* inSourceFormat, const AudioStreamBasicDescription* inDestinationFormat, UInt32 inNumberClassDescriptions, AudioClassDescription* nClassDescriptions, AudioConverterRef* outAudioConverter)
+OSStatus AudioConverterNewSpecific(const AudioStreamBasicDescription* inSourceFormat, const AudioStreamBasicDescription* inDestinationFormat, UInt32 inNumberClassDescriptions, const AudioClassDescription* nClassDescriptions, AudioConverterRef* outAudioConverter)
 {
 	// FIXME
 	return AudioConverterNew(inSourceFormat, inDestinationFormat, outAudioConverter);
@@ -47,6 +69,15 @@ OSStatus AudioConverterReset(AudioConverterRef inAudioConverter)
 
 OSStatus AudioConverterDispose(AudioConverterRef inAudioConverter)
 {
+    if (audioTrace())
+        std::fprintf(stderr, "RIOT_AUDIO dispose converter=%p\n", inAudioConverter);
+    if (!inAudioConverter)
+        return paramErr;
+    {
+        std::lock_guard<std::mutex> lock(converterMutex);
+        if (!liveConverters.erase(inAudioConverter))
+            return paramErr;
+    }
 	delete (AudioConverter*)inAudioConverter;
 	return noErr;
 }

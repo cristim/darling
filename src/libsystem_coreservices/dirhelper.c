@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -44,8 +45,18 @@ char* _dirhelper(int which, char* p, size_t limit)
 		case DIRHELPER_USER_LOCAL:
 		{
 			const char* home;
+			// Darling: guest home is /Users/$USER even though the host
+			// HOME points at the Linux home; trustd needs the guest path
+			// for its cache locations.
+			const char *user = getenv("USER");
+			char home_buf[PATH_MAX];
 
-			home = getenv("HOME");
+			if (user != NULL) {
+				snprintf(home_buf, sizeof(home_buf), "/Users/%s", user);
+				home = home_buf;
+			} else {
+				home = getenv("HOME");
+			}
 			if (home == NULL)
 				home = "";
 
@@ -64,8 +75,15 @@ char* _dirhelper(int which, char* p, size_t limit)
 		case DIRHELPER_USER_LOCAL_CACHE:
 		{
 			const char* home;
+			const char *user = getenv("USER");
+			char home_buf[PATH_MAX];
 
-			home = getenv("HOME");
+			if (user != NULL) {
+				snprintf(home_buf, sizeof(home_buf), "/Users/%s", user);
+				home = home_buf;
+			} else {
+				home = getenv("HOME");
+			}
 			if (home != NULL)
 				snprintf(p, limit, "%s/.cache/%s%s", home, dir_suffix ? dir_suffix : "", dir_suffix ? "/" : "");
 			else

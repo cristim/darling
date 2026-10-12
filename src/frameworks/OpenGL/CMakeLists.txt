@@ -31,9 +31,14 @@ add_framework(OpenGL
         system
         GL
         GLU
-        EGL
+        # darling-lol M57bo: EGL is deliberately NOT a link dependency. Linking
+        # it here puts the native Mesa EGL in the dependency symbol scope of
+        # OpenGL.framework's dependents (ANGLE's libGLESv2), so Chromium's EGL
+        # lookups resolve to the native EGL instead of ANGLE's. OpenGL.c loads
+        # it privately with dlopen(RTLD_LOCAL) instead.
         CoreFoundation
         CoreGraphics
+        IOSurface
 )
 
 set_property(TARGET OpenGL APPEND_STRING PROPERTY LINK_FLAGS

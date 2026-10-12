@@ -86,8 +86,7 @@ protected:
 	uint32_t m_bufferSize = 8192;
 
 	CFStringRef m_name = CFSTR("unknown"), m_uid = CFSTR("unknown"), m_manufacturer = CFSTR("unknown"), m_modelUid = CFSTR("unknown");
-	AudioStreamBasicDescription m_asbd;
+	AudioStreamBasicDescription m_asbd = {};
 };
 
 #endif /* AUDIOHARDWAREIMPL_H */
-

@@ -1,3 +1,4 @@
+#include "../AudioTrace.h"
 /*
 This file is part of Darling.
 
@@ -18,6 +19,8 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "AudioComponentManager.h"
 #include <cstdlib>
+#include <algorithm>
+#include <cstdio>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CarbonCore/MacErrors.h>
 
@@ -210,6 +213,11 @@ std::vector<AudioComponent> AudioComponentManager::findMatching(const AudioCompo
 		}
 	}
 
+    // Prefer a newer user component over an older system implementation of
+    // the same audio unit. Retain the existing order for equal versions.
+    std::stable_sort(rv.begin(),rv.end(),[this](AudioComponent a,AudioComponent b) {
+        return m_components.at(a).version>m_components.at(b).version;
+    });
 	return rv;
 }
 
@@ -274,6 +282,11 @@ OSStatus AudioComponentManager::instantiate(AudioComponent c, AudioComponentInst
 		return invalidComponentID;
 
 	RegisteredComponent& regd = it->second;
+    static unsigned traceCount=0;
+    if(getenv("RCLOL_AUDIO_TRACE") && traceCount++<16)
+        rclolAudioTrace("AUDIO_COMPONENT version=%u subtype=%08x user_override=%d\n",
+            regd.version,regd.desc.componentSubType,
+            regd.bundlePath.find("DarlingRiotAudio.component")!=std::string::npos);
 	if (!regd.factory)
 	{
 		// Load the bundle

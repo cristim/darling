@@ -19,6 +19,7 @@ add_framework(HIToolbox
 
 	SOURCES
 		src/Keyboards.cpp
+		src/SecureInput.c
 		src/Events.cpp
 		src/CarbonEventsCore.c
 		src/CarbonEvents.c

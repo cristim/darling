@@ -26,6 +26,8 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <condition_variable>
+#include <chrono>
 
 AudioHardwareImplPA::AudioHardwareImplPA(AudioObjectID myId, const char* paRole)
 : AudioHardwareImpl(myId), m_paRole(paRole)
@@ -37,8 +39,34 @@ AudioHardwareImplPA::AudioHardwareImplPA(AudioObjectID myId, const char* paRole)
 
 AudioHardwareImplPA::~AudioHardwareImplPA()
 {
-	if (m_context)
-		pa_context_unref(m_context);
+    for(auto& stream:m_streams) stream.second->stop();
+    m_streams.clear();
+    if(m_context && m_loop) {
+        m_loop->sync(^{ pa_context_disconnect(m_context);pa_context_unref(m_context); });
+        m_context=nullptr;
+    }
+}
+
+void AudioHardwareImplPA::syncPA(void (^block)(void)) {
+    if(m_loop) m_loop->sync(block);else block();
+}
+
+OSStatus AudioHardwareImplPA::stop(AudioDeviceIOProcID inProcID) {
+    __block OSStatus result = noErr;
+    syncPA(^{
+        auto it = m_streams.find(inProcID);
+        if (it == m_streams.end()) {
+            result = kAudioHardwareNotRunningError;
+            return;
+        }
+        auto* stream = it->second.release();
+        m_streams.erase(it);
+        stream->stop();
+        // An IOProc may stop itself. Keep its C++ stream alive until the
+        // current PulseAudio callback has unwound on this serial queue.
+        m_loop->async(^{ delete stream; });
+    });
+    return result;
 }
 
 OSStatus AudioHardwareImplPA::getPropertyData(const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize,
@@ -46,6 +74,18 @@ OSStatus AudioHardwareImplPA::getPropertyData(const AudioObjectPropertyAddress* 
 {
 	switch (inAddress->mSelector)
 	{
+		case kAudioDevicePropertyStreams:
+        {
+            if (m_myId == kAudioObjectSystemObject) return kAudioHardwareUnknownPropertyError;
+            bool input=m_myId==kAudioObjectSystemObject+2;
+            bool matches=inAddress->mScope==kAudioObjectPropertyScopeGlobal ||
+                inAddress->mScope==(input?kAudioObjectPropertyScopeInput:kAudioObjectPropertyScopeOutput);
+            UInt32 size=matches?sizeof(AudioStreamID):0;
+            if(outData && *ioDataSize<size) return kAudioHardwareBadPropertySizeError;
+            if(outData && size) *(AudioStreamID*)outData=0x44410000u|m_myId;
+            *ioDataSize=size;
+            return noErr;
+        }
 		// BEGIN kAudioObjectSystemObject properties
 		case kAudioHardwarePropertyDefaultInputDevice: // returns AudioDeviceID
 			if (AudioDeviceID* devId = static_cast<AudioDeviceID*>(outData); devId && *ioDataSize >= sizeof(AudioDeviceID))
@@ -115,112 +155,47 @@ AudioHardwareStream* AudioHardwareImplPA::createStream(AudioDeviceIOProc callbac
 
 extern "C" char ***_NSGetArgv(void);
 
-static void paContextStateCB(pa_context* c, void* priv)
-{
-	void (^cb)(pa_context*) = (void (^)(pa_context*)) priv;
+struct PAContextReady {
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool finished=false;
+};
 
-	pa_context_state_t state = pa_context_get_state(c);
-	if (state == PA_CONTEXT_READY)
-	{
-		// std::cout << "PA_CONTEXT_READY\n";
-
-		cb(c);
-		Block_release(cb);
-
-		// FIXME: We won't be notified about later disconnects...
-		pa_context_set_state_callback(c, nullptr, nullptr);
-	}
-	else if (state == PA_CONTEXT_FAILED)
-	{
-		std::cerr << "PulseAudio error: PA_CONTEXT_FAILED\n";
-
-		cb(nullptr);
-		Block_release(cb);
-		pa_context_set_state_callback(c, nullptr, nullptr);
-	}
+static void paContextStateCB(pa_context* context,void* userdata) {
+    auto state=pa_context_get_state(context);
+    if(state!=PA_CONTEXT_READY && state!=PA_CONTEXT_FAILED && state!=PA_CONTEXT_TERMINATED) return;
+    auto* ready=static_cast<PAContextReady*>(userdata);
+    std::lock_guard<std::mutex> lock(ready->mutex);
+    ready->finished=true;
+    ready->condition.notify_one();
 }
 
-static const char* appNameFromExecutable()
-{
-	const char* name = (*_NSGetArgv())[0];
-	const char* p = std::strrchr(name, '/');
-
-	if (p && *(p+1))
-		return p+1;
-	return name;
-}
-
-void AudioHardwareImplPA::getPAContext(void (^cb)(pa_context*))
-{
-	// TODO: destruction
-	static std::mutex mutex;
-
-	if (m_context == nullptr)
-	{
-		std::unique_lock<std::mutex> l(mutex);
-
-		if (m_context == nullptr)
-		{
-			const char* appname = appNameFromExecutable();
-			const char* appid = "org.darlinghq.some-app";
-
-			pa_proplist* proplist = pa_proplist_new();
-
-			// Try to find a better application name & id from the bundle
-			CFBundleRef mainBundle = CFBundleGetMainBundle();
-			if (mainBundle)
-			{
-				CFStringRef ident = CFBundleGetIdentifier(mainBundle);
-				if (ident)
-					appid = CFStringGetCStringPtr(ident, kCFStringEncodingUTF8);
-
-				CFDictionaryRef infoDict = CFBundleGetLocalInfoDictionary(mainBundle);
-				if (!infoDict)
-					infoDict = CFBundleGetInfoDictionary(mainBundle);
-				
-				if (infoDict)
-				{
-					CFStringRef name = (CFStringRef) CFDictionaryGetValue(infoDict, CFSTR("CFBundleDisplayName"));
-					if (!name)
-						name = (CFStringRef) CFDictionaryGetValue(infoDict, CFSTR("CFBundleName"));
-					if (name)
-						appname = CFStringGetCStringPtr(name, kCFStringEncodingUTF8);
-				}
-			}
-
-			pa_proplist_sets(proplist, PA_PROP_APPLICATION_NAME, appname);
-			pa_proplist_sets(proplist, PA_PROP_APPLICATION_ID, appid);
-			if (m_paRole)
-				pa_proplist_sets(proplist, PA_PROP_MEDIA_ROLE, m_paRole);
-			// pa_proplist_sets(proplist, PA_PROP_APPLICATION_ICON_NAME, "icon-name");
-			// pa_proplist_sets(proplist, PA_PROP_MEDIA_ROLE, "game");
-
-			m_loop.reset(new PADispatchMainLoop);
-
-			m_context = pa_context_new_with_proplist(m_loop->getAPI(), appname, proplist);
-			pa_proplist_free(proplist);
-
-			if (!m_context)
-			{
-				cb(nullptr);
-				return;
-			}
-
-			pa_context_set_state_callback(m_context, paContextStateCB, Block_copy(cb));
-
-			if (pa_context_connect(m_context, nullptr, PA_CONTEXT_NOFLAGS, nullptr) < 0)
-			{
-				std::cerr << "pa_context_connect() returned an error\n";
-				pa_context_set_state_callback(m_context, nullptr, nullptr);
-				cb(nullptr);
-				return;
-			}
-
-			m_loop->resume();
-		}
-	}
-	else
-		cb(m_context);
+void AudioHardwareImplPA::getPAContext(void (^cb)(pa_context*)) {
+    // Serialize initial connection and reuse. The callback always runs on the
+    // PulseAudio queue after readiness, with the stream fully constructed.
+    static std::mutex creationMutex;
+    std::unique_lock<std::mutex> creationLock(creationMutex);
+    if(!m_context) {
+        pa_proplist* properties=pa_proplist_new();
+        pa_proplist_sets(properties,PA_PROP_APPLICATION_NAME,"Darling CoreAudio");
+        pa_proplist_sets(properties,PA_PROP_APPLICATION_ID,"org.darlinghq.coreaudio");
+        if(m_paRole) pa_proplist_sets(properties,PA_PROP_MEDIA_ROLE,m_paRole);
+        m_loop.reset(new PADispatchMainLoop);
+        m_context=pa_context_new_with_proplist(m_loop->getAPI(),"Darling CoreAudio",properties);
+        pa_proplist_free(properties);
+        if(!m_context) { cb(nullptr);return; }
+        PAContextReady ready;
+        pa_context_set_state_callback(m_context,paContextStateCB,&ready);
+        int connected=pa_context_connect(m_context,nullptr,PA_CONTEXT_NOFLAGS,nullptr);
+        m_loop->resume();
+        if(connected>=0) {
+            std::unique_lock<std::mutex> lock(ready.mutex);
+            ready.condition.wait_for(lock,std::chrono::seconds(10),[&]{return ready.finished;});
+        }
+        // Remove the stack-backed readiness callback before leaving its scope.
+        m_loop->sync(^{pa_context_set_state_callback(m_context,nullptr,nullptr);});
+    }
+    m_loop->sync(^{cb(pa_context_get_state(m_context)==PA_CONTEXT_READY?m_context:nullptr);});
 }
 
 pa_sample_spec AudioHardwareImplPA::paSampleSpecForASBD(const AudioStreamBasicDescription& asbd, bool* convertSignedUnsigned)

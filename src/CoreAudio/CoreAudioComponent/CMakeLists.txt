@@ -29,6 +29,7 @@ set(component_sources
 	PublicUtility/CAVectorUnit.cpp
 	AUHAL.cpp
 	SystemOutputAU.cpp
+	MatrixMixerAU.cpp
 	DefaultOutputAU.cpp
 )
 

@@ -264,6 +264,10 @@ void* MAXCaptionAppearancePrefSetWindowColor(void);
 void* MAXCaptionAppearancePrefSetWindowOpacity(void);
 void* MAXCaptionAppearancePrefSetWindowRoundedCornerRadius(void);
 void* MAXCaptionAppearanceSetPreferredLanguage(void);
+#include <CoreFoundation/CFString.h>
+
 void* MAXCaptionAppearanceShowCaptionsWhenAvailable(void);
+
+extern const CFStringRef kMACaptionAppearanceSettingsChangedNotification;
 
 #endif

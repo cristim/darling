@@ -82,6 +82,7 @@ reexport(CoreServices Metadata ${Metadata_BUILD})
 reexport(CoreServices SearchKit ${SearchKit_BUILD})
 reexport(CoreServices SharedFileList ${SharedFileList_BUILD})
 reexport(CoreServices OSServices ${OSServices_BUILD})
+reexport(CoreServices Foundation ${CMAKE_BINARY_DIR}/src/external/foundation/Foundation)
 
 set_property(TARGET CoreServices APPEND_STRING PROPERTY
   LINK_FLAGS " -Wl,-reexported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/reexport.exp")

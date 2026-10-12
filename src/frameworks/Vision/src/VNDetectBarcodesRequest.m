@@ -19,6 +19,24 @@
 
 #import <Vision/VNDetectBarcodesRequest.h>
 
+VNBarcodeSymbology const VNBarcodeSymbologyAztec = @"org.iso.Aztec";
+VNBarcodeSymbology const VNBarcodeSymbologyCode128 = @"org.iso.Code128";
+VNBarcodeSymbology const VNBarcodeSymbologyCode39 = @"org.iso.Code39";
+VNBarcodeSymbology const VNBarcodeSymbologyCode39Checksum = @"org.iso.Code39Checksum";
+VNBarcodeSymbology const VNBarcodeSymbologyCode39FullASCII = @"org.iso.Code39FullASCII";
+VNBarcodeSymbology const VNBarcodeSymbologyCode39FullASCIIChecksum = @"org.iso.Code39FullASCIIChecksum";
+VNBarcodeSymbology const VNBarcodeSymbologyCode93 = @"org.iso.Code93";
+VNBarcodeSymbology const VNBarcodeSymbologyCode93i = @"org.iso.Code93i";
+VNBarcodeSymbology const VNBarcodeSymbologyDataMatrix = @"org.iso.DataMatrix";
+VNBarcodeSymbology const VNBarcodeSymbologyEAN13 = @"org.gs1.EAN-13";
+VNBarcodeSymbology const VNBarcodeSymbologyEAN8 = @"org.gs1.EAN-8";
+VNBarcodeSymbology const VNBarcodeSymbologyI2of5 = @"org.iso.I2of5";
+VNBarcodeSymbology const VNBarcodeSymbologyI2of5Checksum = @"org.iso.I2of5Checksum";
+VNBarcodeSymbology const VNBarcodeSymbologyITF14 = @"org.iso.ITF14";
+VNBarcodeSymbology const VNBarcodeSymbologyPDF417 = @"org.iso.PDF417";
+VNBarcodeSymbology const VNBarcodeSymbologyQR = @"org.iso.QRCode";
+VNBarcodeSymbology const VNBarcodeSymbologyUPCE = @"org.gs1.UPC-E";
+
 @implementation VNDetectBarcodesRequest
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector

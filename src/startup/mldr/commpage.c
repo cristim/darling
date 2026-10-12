@@ -12,6 +12,7 @@
 // Include commpage definitions
 #define PRIVATE
 #include <i386/cpu_capabilities.h>
+#include "commpage-cpu-caps.h"
 
 static const char* SIGNATURE32 = "commpage 32-bit";
 static const char* SIGNATURE64 = "commpage 64-bit";
@@ -84,74 +85,26 @@ void commpage_setup(bool _64bit)
 
 uint64_t get_cpu_caps(void)
 {
-	uint64_t caps = 0;
-
-	{
-		union cpu_flags1 eax;
-		union cpu_flags2 ecx;
-		union cpu_flags3 edx;
-		uint32_t ebx;
-
-		eax.reg = ecx.reg = edx.reg = 0;
-		__cpuid(1, eax.reg, ebx, ecx.reg, edx.reg);
-
-		if (ecx.mmx)
-			caps |= kHasMMX;
-		if (ecx.sse)
-			caps |= kHasSSE;
-		if (ecx.sse2)
-			caps |= kHasSSE2;
-		if (edx.sse3)
-			caps |= kHasSSE3;
-		if (ecx.ia64)
-			caps |= k64Bit;
-		if (edx.ssse3)
-			caps |= kHasSupplementalSSE3;
-		if (edx.sse41)
-			caps |= kHasSSE4_1;
-		if (edx.sse42)
-			caps |= kHasSSE4_2;
-		if (edx.aes)
-			caps |= kHasAES;
-		if (edx.avx)
-			caps |= kHasAVX1_0;
-		if (edx.rdrnd)
-			caps |= kHasRDRAND;
-		if (edx.fma)
-			caps |= kHasFMA;
-		if (edx.f16c)
-			caps |= kHasF16C;
-	}
-	{
-		union cpu_flags4 ebx;
-		union cpu_flags5 ecx;
-		uint32_t edx = 0, eax = 7;
-
-		__cpuid(7, eax, ebx.reg, ecx.reg, edx);
-
-		if (ebx.erms)
-			caps |= kHasENFSTRG;
-		if (ebx.avx2)
-			caps |= kHasAVX2_0;
-		if (ebx.bmi1)
-			caps |= kHasBMI1;
-		if (ebx.bmi2)
-			caps |= kHasBMI2;
-		if (ebx.rtm)
-			caps |= kHasRTM;
-		if (ebx.hle)
-			caps |= kHasHLE;
-		if (ebx.rdseed)
-			caps |= kHasRDSEED;
-		if (ebx.adx)
-			caps |= kHasADX;
-		if (ebx.mpx)
-			caps |= kHasMPX;
-		if (ebx.sgx)
-			caps |= kHasSGX;
-	}
-
-	return caps;
+    unsigned int a, b, ecx1 = 0, edx1 = 0, ebx7 = 0;
+    const unsigned int max_basic = __get_cpuid_max(0, NULL);
+    if (max_basic >= 1) __cpuid_count(1, 0, a, b, ecx1, edx1);
+    if (max_basic >= 7) {
+        unsigned int c, d;
+        __cpuid_count(7, 0, a, ebx7, c, d);
+    }
+    uint64_t xcr0 = 0;
+    if ((ecx1 & ((1u << 26) | (1u << 27))) == ((1u << 26) | (1u << 27))) {
+        unsigned int low, high;
+        __asm__ volatile("xgetbv" : "=a"(low), "=d"(high) : "c"(0));
+        xcr0 = ((uint64_t)high << 32) | low;
+    }
+    int long_mode = 0;
+    if (__get_cpuid_max(0x80000000u, NULL) >= 0x80000001u) {
+        unsigned int c, d;
+        __cpuid_count(0x80000001u, 0, a, b, c, d);
+        long_mode = !!(d & (1u << 29));
+    }
+    return commpage_decode_cpu_caps(ecx1, edx1, ebx7, xcr0, long_mode);
 }
 
 unsigned long commpage_address(bool _64bit)

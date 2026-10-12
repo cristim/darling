@@ -36,7 +36,7 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include "shellspawn.h"
 #include "duct_signals.h"
 
-#define DBG 0
+#define DBG 1
 
 int g_serverSocket = -1;
 struct sigaction sigchld_oldaction;
@@ -50,6 +50,17 @@ void reapAll(void);
 
 int main(int argc, const char** argv)
 {
+	// darling-lol M58F40: ignore SIGPIPE.  shellspawn writes to client/child
+	// sockets and pipes whose peers can close at any time (e.g. the `darling`
+	// client probing /var/run/shellspawn.sock and disconnecting, or a shell
+	// whose stdout pipe is closed).  With the default disposition the first such
+	// write raises SIGPIPE and KILLS shellspawn, which removes the container's
+	// shell service and makes every subsequent `darling shell`/`darling <bin>`
+	// fail with "Error connecting to shellspawn ... Connection refused" (the
+	// M58F39 "container wedge").  Every other daemon here (and darlingserver's
+	// M58f2 hardening) already ignores SIGPIPE; shellspawn was missed.
+	signal(SIGPIPE, SIG_IGN);
+
 	// shellspawn (daemon) --fork()--> shellspawn (child) --fork()--> exec /bin/bash
 	// in order to read the exit status of the shell process,
 	// we have to allow it to become a zombie, therefore we need to

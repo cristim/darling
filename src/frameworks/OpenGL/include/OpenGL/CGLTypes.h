@@ -64,6 +64,7 @@ enum {
     kCGLPFARemotePBuffer = 91,
     kCGLPFAAllowOfflineRenderers = 96,
     kCGLPFAAcceleratedCompute = 97,
+    kCGLPFAOpenGLProfile = 99,
     kCGLPFAVirtualScreenCount = 128,
 };
 

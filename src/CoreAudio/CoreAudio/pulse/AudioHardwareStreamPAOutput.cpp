@@ -21,16 +21,17 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include "AudioHardwareImplPA.h"
 #include <iostream>
 #include <algorithm>
+#include <mach/mach_time.h>
 
 AudioHardwareStreamPAOutput::AudioHardwareStreamPAOutput(AudioHardwareImplPA* hw, AudioDeviceIOProc callback, void* clientData)
 : AudioHardwareStreamPA(hw, callback, clientData)
 {
+    initialize();
 }
 
 void AudioHardwareStreamPAOutput::paStreamWriteCB(pa_stream* s, size_t length, void* self)
 {
 	AudioHardwareStreamPAOutput* This = static_cast<AudioHardwareStreamPAOutput*>(self);
-	std::unique_lock<std::mutex> l(This->m_stopMutex);
 
 	if (!This->m_running)
 	{
@@ -55,17 +56,26 @@ void AudioHardwareStreamPAOutput::paStreamWriteCB(pa_stream* s, size_t length, v
 
 		// std::cout << "AudioHardwareStreamPAOutput() length req=" << length << ", done=" << done << std::endl;
 		size_t rqsize = std::min<UInt32>(This->m_bufferSize, length-done);
-		pa_stream_begin_write(This->m_stream, (void**) &abl->mBuffers[0].mData, &rqsize);
+        if(pa_stream_begin_write(This->m_stream,(void**)&abl->mBuffers[0].mData,&rqsize)<0 || !rqsize) break;
 
 		abl->mBuffers[0].mDataByteSize = rqsize;
+        fake.mHostTime=mach_absolute_time();
+        fake.mSampleTime=This->m_frames;
+        fake.mFlags=kAudioTimeStampHostTimeValid|kAudioTimeStampSampleTimeValid;
 
 		// Call the client for more data
 		OSStatus status = This->m_callback(This->m_hw->id(), &fake, nullptr, nullptr, abl, &fake, This->m_clientData);
+        if (!This->m_running) {
+            // The client stopped/disconnected the stream during its IOProc.
+            pa_stream_cancel_write(s);
+            return;
+        }
 		if (status != noErr || !abl->mBuffers[0].mDataByteSize)
 		{
 			// std::cerr << "AudioDeviceIOProc returned " << status << ", corking...\n";
 
 			pa_stream_cork(This->m_stream, true, [](pa_stream*, int, void*) {}, nullptr);
+			pa_stream_cancel_write(This->m_stream);
 			break;
 		}
 		else
@@ -85,6 +95,7 @@ void AudioHardwareStreamPAOutput::paStreamWriteCB(pa_stream* s, size_t length, v
 		}
 
 		done += abl->mBuffers[0].mDataByteSize;
+        if(This->m_hw->asbd().mBytesPerFrame) This->m_frames+=abl->mBuffers[0].mDataByteSize/This->m_hw->asbd().mBytesPerFrame;
 	}
 }
 
@@ -108,4 +119,3 @@ void AudioHardwareStreamPAOutput::start()
 	// pa_stream_cork(m_stream, false, [](pa_stream*, int, void*) {}, nullptr);
 	AudioHardwareStreamPA::start();
 }
-
