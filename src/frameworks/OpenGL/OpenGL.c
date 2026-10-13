@@ -772,8 +772,14 @@ CGL_EXPORT int CGLPresentIOSurface(IOSurfaceRef surface) {
         }
     }
     DarlingNativePresentTarget *target=ctx->native_present_target;
+    /* A Chromium context renders several windows. An unrelated surface must
+     * use readback without stopping the active window's async presenter. */
+    if(target && __atomic_load_n(&target->magic,__ATOMIC_ACQUIRE)==DARLING_NATIVE_PRESENT_MAGIC &&
+       target->target && (target->width!=width || target->height!=height)) {
+        CGLReleaseContext(ctx);return 0;
+    }
     if(!target || __atomic_load_n(&target->magic,__ATOMIC_ACQUIRE)!=DARLING_NATIVE_PRESENT_MAGIC ||
-       target->width!=width || target->height!=height || !target->target){
+       !target->target){
         stopAsyncPresent(ctx);
         if(target){__lolsys_syscall((long)target,sizeof(DarlingNativePresentTarget),0,0,0,0,11);ctx->native_present_target=NULL;ctx->native_present_window=0;}
         CGLReleaseContext(ctx);return 0;

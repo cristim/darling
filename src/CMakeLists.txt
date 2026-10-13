@@ -119,6 +119,13 @@ SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 set(CMAKE_OBJC_FLAGS "${CMAKE_OBJC_FLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 
+# Recent clang compiles an empty @[] / @{} for a macOS 11+ runtime into a reference to
+# __NSArray0__struct / __NSDictionary0__struct, which Darling's CoreFoundation does not define
+# (it provides __NSArray0__ / __NSDictionary0__). Keep the earlier code generation.
+SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fobjc-runtime=macosx-10.15")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fobjc-runtime=macosx-10.15")
+set(CMAKE_OBJC_FLAGS "${CMAKE_OBJC_FLAGS} -fobjc-runtime=macosx-10.15")
+
 add_definitions(-target ${APPLE_TARGET_TRIPLET_PRIMARY})
 include(darling_lib)
 include(darling_static_lib)

@@ -268,7 +268,10 @@ void generate_wrapper(std::ofstream& output, const char* soname, const std::set<
 	
 	for (const std::string& sym : symbols)
 	{
-		output << "void* " << sym << "() {\n"
+        // ld64's x86-64 resolver stub saves integer argument registers only.
+        // ELF lookup can clobber XMM arguments before the stub jumps to its
+        // resolved function. Preserve them in the resolver itself.
+		output << "__attribute__((preserve_all)) void* " << sym << "() {\n"
 			"\t__asm__(\".symbol_resolver _" << sym << "\");\n"
 			"\treturn _elfcalls->dlsym_fatal(lib_handle, \"" << sym << "\");\n"
 			"}\n\n";
