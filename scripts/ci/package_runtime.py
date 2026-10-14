@@ -129,6 +129,11 @@ def merge(args):
         if unexpected:
             raise SystemExit(f"error: unexpected tarball(s) in {directory}: {[u.name for u in unexpected]}")
     locks = {}
+    for directory in args.lock_dirs:
+        top = json.loads(Path(directory, "refs.lock.json").read_text())
+        source = [item for item in top["repos"] if item["repo"] == "darling"]
+        if len(source) != 1 or source[0].get("base") != args.sha:
+            raise SystemExit(f"error: {directory}/refs.lock.json must contain exactly one darling entry matching source SHA {args.sha}")
     for kind in ("refs", "nested.refs"):
         sets = [comparable(json.loads(Path(d, f"{kind}.lock.json").read_text())) for d in args.lock_dirs]
         if any(s != sets[0] for s in sets):
