@@ -250,6 +250,7 @@ jobs:
           for arch in aarch64 x86_64; do
             [ -f "art/runtime-$arch/fragment-$arch.json" ] && frags+=("$arch")
           done
+          [ "${#frags[@]}" -gt 0 ] || { echo "no architecture produced an image" >&2; exit 1; }
           pre="$PRERELEASE"
           if [ "${#frags[@]}" -ne 2 ]; then
             [ "$ALLOW_PARTIAL" = "true" ] || { echo "${#frags[@]} of 2 architectures built; re-run, or dispatch with allow_partial" >&2; exit 1; }
