@@ -24,8 +24,10 @@ from alias_guest import build as build_aliases, compile_sources as compile_alias
 
 INPUTS = (
     "build.sh", "main_func.c", "main_data.c", "main_multi.c", "main_weak.c",
-    "libmstreal.c", "libmstempty.c", "sysstub.c",
+    "libmstreal.c", "libmstempty.c", "sysstub.c", "guest_session.py",
 )
+PR1170_SHA = "04472c5764f95a6225946c7bf1ea95f7b1b9c660"
+GUEST_SESSION_SHA256 = "ddab36c290c828bc1625b6f3a55c20a820b8631b44da3934164f6cc96b1c495e"
 GUEST_INPUTS = ("build_guest.py", "run_guest.py", "many_guest.py", "fx/libguest.c", "fx/main_multi_weak.c", "fx/main_objc.c",
                 "fx/main_dlopen.c", "fx/sysstub.c", "fx/bundle.c", "local_guest.py", "fx/guest_api.h", "fx/libthreadstub.c",
                 "fx/main_threads.c", "fx/main_local.c", "fx/bundle_self.c", "alias_guest.py",
@@ -148,8 +150,8 @@ def main() -> None:
     parser.add_argument("--ld", type=absolute, required=True)
     parser.add_argument("--otool", type=absolute, required=True)
     args = parser.parse_args()
-    if not re.fullmatch(r"[0-9a-f]{40}", args.pr1170_sha):
-        parser.error("--pr1170-sha must name an exact committed tree")
+    if args.pr1170_sha != PR1170_SHA:
+        parser.error("--pr1170-sha must name the reviewed canonical commit")
     for path, name in ((args.clang, "clang"), (args.otool, "llvm-otool")):
         if path.name != name or not os.access(path, os.X_OK):
             parser.error(f"explicit executable must be named {name}: {path}")
@@ -160,6 +162,7 @@ def main() -> None:
     lock = lock_path.open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     inherited = committed_inputs(args.pr1170_repo, args.pr1170_sha, INPUTS, "tests/mst/")
+    assert hashlib.sha256(inherited["guest_session.py"]).hexdigest() == GUEST_SESSION_SHA256
     authored = committed_inputs(args.fixture_repo, args.fixture_sha, GUEST_INPUTS)
     assert authored["build_guest.py"] == Path(__file__).read_bytes(), "builder differs from committed fixture source"
     assert authored["many_guest.py"] == Path(__file__).with_name("many_guest.py").read_bytes(), "generator differs from committed fixture source"

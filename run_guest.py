@@ -6,18 +6,18 @@ runtime_root, dyld_relative, dyld_sha256, source_repo, source_sha, launcher_sha2
 Receipts identify committed runtime inputs; they must be prepared by the builder.
 """
 
+from __future__ import annotations
+
 import argparse
-import fcntl
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import stat
-import subprocess
 import tempfile
+from types import ModuleType
 
-from build_guest import CORE_PROGRAMS, GUEST_INPUTS, INPUTS, T8_BUNDLES, T8_PROGRAMS, T9_BUNDLES, T9_PROGRAMS, absolute, commands, committed_inputs
+from build_guest import PR1170_SHA, GUEST_SESSION_SHA256, CORE_PROGRAMS, GUEST_INPUTS, INPUTS, T8_BUNDLES, T8_PROGRAMS, T9_BUNDLES, T9_PROGRAMS, absolute, commands, committed_inputs
 from many_guest import NAMES, import_order
 from local_guest import assert_flat, assert_self
 from alias_guest import LAYOUT, LEAVES, assert_pair
@@ -32,37 +32,12 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def git(repo: Path, *args: str) -> str:
-    process = subprocess.Popen(["git", "-C", str(repo), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    try:
-        stdout, stderr = process.communicate(timeout=15)
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError(f"git deadline exceeded; retained pid {process.pid}") from error
-    if process.returncode:
-        raise RuntimeError(stderr.decode(errors="replace"))
-    return stdout.decode().strip()
-
-
-def runtime_identity(receipt: Path, launcher: Path) -> dict:
-    data = json.loads(receipt.read_text())
-    assert set(data) == {"runtime_root", "dyld_relative", "dyld_sha256", "source_repo", "source_sha", "launcher_sha256"}
-    root, repo = absolute(data["runtime_root"]), absolute(data["source_repo"])
-    relative = Path(data["dyld_relative"])
-    assert not relative.is_absolute() and ".." not in relative.parts
-    dyld = root / relative
-    assert dyld.resolve().is_relative_to(root.resolve())
-    assert (root / "usr/local").is_dir()
-    assert re.fullmatch(r"[0-9a-f]{40}", data["source_sha"])
-    assert git(repo, "rev-parse", "HEAD") == data["source_sha"]
-    assert not git(repo, "status", "--porcelain", "--untracked-files=no"), "runtime source has tracked changes"
-    assert digest(dyld) == data["dyld_sha256"]
-    assert digest(launcher) == data["launcher_sha256"]
-    return data
-
-
-def fixture_identity(package: Path) -> dict:
+def fixture_identity(package: Path) -> tuple[dict, bytes]:
     manifest = json.loads((package / "manifest.json").read_text())
     assert set(manifest) == {"pr1170_repo", "pr1170_sha", "inputs", "fixture_repo", "fixture_sha", "fixture_inputs", "many_imports", "files"}
+    assert manifest["pr1170_sha"] == PR1170_SHA, "unreviewed canonical source commit"
+    helper = (package / "source/pr1170/guest_session.py").read_bytes()
+    assert hashlib.sha256(helper).hexdigest() == GUEST_SESSION_SHA256, "unreviewed canonical helper bytes"
     files = manifest["files"]
     assert type(files) is dict
     required = {f"fixtures/arm64/{variant}/{lib}/{name}" for variant in ("opcode", "chained")
@@ -113,64 +88,16 @@ def fixture_identity(package: Path) -> dict:
         assert_self(bundle, commands(bundle.read_bytes()))
         for kind in LAYOUT:
             assert_pair(package / f"fixtures/arm64/{variant}/aliases/{kind}", kind, commands)
-    return manifest
+    assert helper == committed_inputs(absolute(manifest["pr1170_repo"]), PR1170_SHA, ("guest_session.py",), "tests/mst/")["guest_session.py"]
+    return manifest, helper
 
 
-class Prefix:
-    def __init__(self, launcher: Path, identity: dict, root: Path, label: str):
-        self.launcher = launcher
-        self.root = root / label
-        self.root.mkdir(mode=0o700)
-        self.prefix = self.root / "p"
-        self.prefix.mkdir(mode=0o700)
-        self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("DARLING_", "DYLD_", "MST_"))}
-        self.env.update(DPREFIX=str(self.prefix), DARLING_INSTALL_PREFIX=str(Path(identity["runtime_root"]) / "usr/local"))
-        self.shutdown_attempted = False
-        self.sequence = 0
-
-    def launch(self, tag: str, arguments: list[str], deadline: int) -> tuple[subprocess.Popen, Path]:
-        self.sequence += 1
-        path = self.root / f"{self.sequence:04d}-{tag}"
-        with path.with_suffix(".out").open("xb") as stdout, path.with_suffix(".err").open("xb") as stderr:
-            process = subprocess.Popen([str(self.launcher), *arguments], env=self.env, stdout=stdout, stderr=stderr)
-        path.with_suffix(".pid.json").write_text(json.dumps({"pid": process.pid, "prefix": str(self.prefix), "arguments": arguments}) + "\n")
-        try:
-            process.communicate(timeout=deadline)
-        except subprocess.TimeoutExpired:
-            path.with_suffix(".timeout").write_text(f"deadline={deadline}; pid={process.pid}; prefix={self.prefix}\n")
-            return process, path
-        path.with_suffix(".rc").write_text(f"{process.returncode}\n")
-        return process, path
-
-    def stop(self) -> None:
-        if self.shutdown_attempted:
-            return
-        self.shutdown_attempted = True
-        process, path = self.launch("shutdown", ["shutdown"], 30)
-        if process.returncode != 0:
-            raise RuntimeError(f"shutdown failed or exceeded deadline; prefix retained: {self.prefix}; receipts: {path}")
-
-    def guest(self, tag: str, program: str, variables: list[str], deadline: int = 120,
-              program_arguments: tuple[str, ...] = ()) -> tuple[int, bytes, bytes]:
-        process, path = self.launch(tag, ["shell", "/usr/bin/env", *variables, program, *program_arguments], deadline)
-        if process.returncode is None:
-            shutdown_error = None
-            try:
-                self.stop()
-            except RuntimeError as error:
-                shutdown_error = error
-            try:
-                process.communicate(timeout=30)
-            except subprocess.TimeoutExpired as error:
-                raise RuntimeError(f"launcher retained after shutdown; pid={process.pid}, prefix={self.prefix}, receipts={path}; shutdown={shutdown_error}") from error
-            path.with_suffix(".rc").write_text(f"{process.returncode}\n")
-            raise RuntimeError(f"guest deadline exceeded; receipts={path}; shutdown={shutdown_error}")
-        return process.returncode, path.with_suffix(".out").read_bytes(), path.with_suffix(".err").read_bytes()
-
-    def warmup(self) -> None:
-        result = self.guest("warmup", "/usr/bin/true", [], 300)
-        assert result[0] == 0, f"warm-up failed: {self.root}"
+def load_guest_session(package: Path, verified: bytes) -> ModuleType:
+    origin = str(package / "source/pr1170/guest_session.py")
+    module = ModuleType("mst_verified_guest_session")
+    module.__file__ = origin
+    exec(compile(verified, origin, "exec"), module.__dict__)
+    return module
 
 
 def read_records(directory: Path, executable: str, *, absent: bool = False) -> list[dict]:
@@ -481,24 +408,28 @@ def main() -> None:
     parser.add_argument("--base-receipt", type=absolute, required=True)
     parser.add_argument("--fix-receipt", type=absolute, required=True)
     parser.add_argument("--package", type=absolute, required=True)
+    parser.add_argument("--overall-deadline", required=True)
+    parser.add_argument("--inherited-lock-fd")
     args = parser.parse_args()
-    assert os.access(args.launcher, os.X_OK) and not args.launcher.stat().st_mode & stat.S_ISUID
-    identities = {label: runtime_identity(receipt, args.launcher) for label, receipt in
+    manifest, helper = fixture_identity(args.package)
+    session = load_guest_session(args.package, helper)
+    overall = session.Deadline(args.overall_deadline)
+    identities = {label: session.runtime_identity(receipt, args.launcher) for label, receipt in
                   (("base", args.base_receipt), ("fix", args.fix_receipt))}
-    manifest = fixture_identity(args.package)
-    lock_path = Path("/tmp/agent-locks/darling-heavy-build.lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    with session.HeavyLock(args.inherited_lock_fd):
+        overall.budget(1)
         root = Path(tempfile.mkdtemp(prefix="mstg-", dir="/tmp"))
         print(f"artifacts retained: {root}", flush=True)
         (root / "identities.json").write_text(json.dumps({"runtimes": identities, "fixtures": manifest}, indent=2) + "\n")
         results = {}
         for label in ("base", "fix"):
-            prefix = Prefix(args.launcher, identities[label], root, label)
+            overall.budget(1)
+            prefix = session.Prefix(args.launcher, identities[label], root, label, overall)
             results[label] = run_checks(prefix, args.package, label, manifest)
+        overall.budget(1)
         for tag, baseline in results["base"].items():
             assert results["fix"][tag] == baseline, f"default-off differs from base: {tag}"
+        overall.budget(1)
         print("PASS core, caps, threads, local bundles, aliases and fork; shutdown complete")
 
 
