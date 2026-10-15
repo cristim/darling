@@ -55,7 +55,10 @@ def package(root: Path) -> tuple[Path, dict]:
                 path = result / "fixtures/arm64" / variant / lib / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(f"authored placeholder; never executable: {variant}/{lib}/{name}\n")
-        for name in ("b_short", "b_long4095", "b_long4096"):
+        for name in ("main_threads", "main_local"):
+            path = result / "fixtures/arm64" / variant / "real" / name
+            path.write_text("authored non-executable thread/local placeholder\n")
+        for name in ("b_short", "b_long4095", "b_long4096", "b_thread_a", "b_thread_b", "b_self"):
             path = result / "fixtures/arm64" / variant / "bundles" / f"{name}.bundle"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("authored non-executable bundle placeholder\n")
@@ -76,7 +79,7 @@ def preflight(package_path: Path, manifest: dict, *, should_reach: bool) -> None
     (package_path / "manifest.json").write_text(json.dumps(manifest))
     arguments = ["run_guest.py", "--launcher", sys.executable, "--base-receipt", "/tmp/base-receipt", "--fix-receipt", "/tmp/fix-receipt", "--package", str(package_path)]
     reached = False
-    with patch.object(sys, "argv", arguments), patch.object(run_guest, "runtime_identity", return_value={}), patch.object(run_guest.fcntl, "flock", side_effect=ExecutionReached), patch.object(run_guest, "commands", return_value=[]), patch.object(run_guest, "import_order", return_value=list(NAMES)):
+    with patch.object(sys, "argv", arguments), patch.object(run_guest, "runtime_identity", return_value={}), patch.object(run_guest.fcntl, "flock", side_effect=ExecutionReached), patch.object(run_guest, "commands", return_value=[]), patch.object(run_guest, "import_order", return_value=list(NAMES)), patch.object(run_guest, "assert_flat"), patch.object(run_guest, "assert_self"):
         try:
             run_guest.main()
         except ExecutionReached:
@@ -94,6 +97,10 @@ def test_empty_and_partial_files(root: Path) -> None:
     preflight(output, invalid, should_reach=False)
     for required in ("fixtures/arm64/opcode/empty/main_multi", "fixtures/arm64/chained/real/libmst.dylib", "source/guest/fx/main_objc.c",
                      "fixtures/arm64/chained/empty/main_many", "fixtures/arm64/opcode/bundles/b_long4095.bundle"):
+        invalid = copy.deepcopy(original)
+        del invalid["files"][required]
+        preflight(output, invalid, should_reach=False)
+    for required in ("fixtures/arm64/opcode/real/main_threads", "fixtures/arm64/chained/bundles/b_self.bundle"):
         invalid = copy.deepcopy(original)
         del invalid["files"][required]
         preflight(output, invalid, should_reach=False)

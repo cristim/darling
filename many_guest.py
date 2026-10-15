@@ -101,7 +101,7 @@ def chained_imports(data: bytes) -> list[tuple[str, int, bool]]:
     return result
 
 
-def import_order(path: Path, load_commands: list[tuple[int, int, int]]) -> list[str]:
+def import_details(path: Path, load_commands: list[tuple[int, int, int]]) -> tuple[list[str], list[tuple[str, int, bool]]]:
     data = path.read_bytes()
     libraries = []
     imports = []
@@ -124,6 +124,11 @@ def import_order(path: Path, load_commands: list[tuple[int, int, int]]) -> list[
             assert start + length <= len(data)
             imports.extend(chained_imports(data[start:start + length]))
     assert encodings == 1
+    return libraries, imports
+
+
+def import_order(path: Path, load_commands: list[tuple[int, int, int]]) -> list[str]:
+    libraries, imports = import_details(path, load_commands)
     ordered = []
     for name, ordinal, weak in imports:
         if name.startswith("_mst_many_"):

@@ -18,6 +18,7 @@ import struct
 import subprocess
 
 from many_guest import generate, import_order
+from local_guest import assert_flat, patch_self
 
 
 INPUTS = (
@@ -25,10 +26,13 @@ INPUTS = (
     "libmstreal.c", "libmstempty.c", "sysstub.c",
 )
 GUEST_INPUTS = ("build_guest.py", "run_guest.py", "many_guest.py", "fx/libguest.c", "fx/main_multi_weak.c", "fx/main_objc.c",
-                "fx/main_dlopen.c", "fx/sysstub.c", "fx/bundle.c")
+                "fx/main_dlopen.c", "fx/sysstub.c", "fx/bundle.c", "local_guest.py", "fx/guest_api.h", "fx/libthreadstub.c",
+                "fx/main_threads.c", "fx/main_local.c", "fx/bundle_self.c")
 CORE_PROGRAMS = ("main_multi", "main_weak", "main_multi_weak", "main_objc", "main_multi_oldsdk")
 T8_PROGRAMS = ("main_many", "main_dlopen")
 T8_BUNDLES = ("b_short", "b_long4095", "b_long4096")
+T9_PROGRAMS = ("main_threads", "main_local")
+T9_BUNDLES = ("b_thread_a", "b_thread_b", "b_self")
 
 
 def command(argv: list[str], *, env: dict[str, str] | None = None) -> bytes:
@@ -157,6 +161,7 @@ def main() -> None:
     authored = committed_inputs(args.fixture_repo, args.fixture_sha, GUEST_INPUTS)
     assert authored["build_guest.py"] == Path(__file__).read_bytes(), "builder differs from committed fixture source"
     assert authored["many_guest.py"] == Path(__file__).with_name("many_guest.py").read_bytes(), "generator differs from committed fixture source"
+    assert authored["local_guest.py"] == Path(__file__).with_name("local_guest.py").read_bytes(), "self metadata helper differs from committed fixture source"
     args.out.mkdir(mode=0o700)
     sources = args.out / "source/pr1170"
     guest_sources = args.out / "source/guest"
@@ -176,11 +181,12 @@ def main() -> None:
     many_library, many_main = generate(generated)
     for source, name in ((many_library, "libmany"), (many_main, "main_many"),
                          (guest_sources / "fx/main_dlopen.c", "main_dlopen"),
-                         (guest_sources / "fx/sysstub.c", "guest_sysstub")):
+                         (guest_sources / "fx/sysstub.c", "guest_sysstub"),
+                         *((guest_sources / "fx" / f"{name}.c", name) for name in ("libthreadstub", "main_threads", "main_local", "bundle_self"))):
         command([*cc, "-c", str(source), "-o", str(obj / f"{name}.o")])
     command([str(args.ld), "-arch", "arm64", "-dylib", "-platform_version", "macos", "11.0", "11.0",
              "-install_name", "/usr/lib/libSystem.B.dylib", "-compatibility_version", "1",
-             "-o", str(obj / "libSystem.guest.dylib"), str(obj / "guest_sysstub.o")])
+             "-o", str(obj / "libSystem.guest.dylib"), str(obj / "guest_sysstub.o"), str(obj / "libthreadstub.o")])
     many_imports = {}
     for variant in ("opcode", "chained"):
         flags = ["-fixup_chains"] if variant == "chained" else []
@@ -197,11 +203,19 @@ def main() -> None:
         bundles = real.parent / "bundles"
         bundles.mkdir()
         for name, symbol in (("b_short", "_mst_flat_missing"), ("b_long4095", "_" + "A" * 4094),
-                             ("b_long4096", "_" + "A" * 4095)):
+                             ("b_long4096", "_" + "A" * 4095), ("b_thread_a", "_mst_thread_a"), ("b_thread_b", "_mst_thread_b")):
             command([*cc, "-c", str(guest_sources / "fx/bundle.c"), f"-DMST_NAME={symbol}", "-o", str(obj / f"{name}.o")])
             bundle = bundles / f"{name}.bundle"
             command([*link, "-bundle", "-undefined", "dynamic_lookup", "-o", str(bundle), str(obj / f"{name}.o")])
             assert_encoding(bundle, variant)
+            if name in ("b_thread_a", "b_thread_b"):
+                assert_flat(bundle, commands(bundle.read_bytes()), symbol)
+        self_bundle = bundles / "b_self.bundle"
+        command([*link, "-bundle", "-undefined", "dynamic_lookup", "-o", str(self_bundle), str(obj / "bundle_self.o")])
+        assert_encoding(self_bundle, variant)
+        patch_self(self_bundle, commands(self_bundle.read_bytes()))
+        for name in T9_PROGRAMS:
+            command([*link, "-e", "_main", "-o", str(real / name), str(obj / f"{name}.o"), str(obj / "libSystem.guest.dylib")])
         for directory in (real, empty):
             sdk_probe(directory / "main_multi", directory / "main_multi_oldsdk")
             for path in directory.iterdir():

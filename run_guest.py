@@ -17,8 +17,9 @@ import stat
 import subprocess
 import tempfile
 
-from build_guest import CORE_PROGRAMS, GUEST_INPUTS, INPUTS, T8_BUNDLES, T8_PROGRAMS, absolute, commands, committed_inputs
+from build_guest import CORE_PROGRAMS, GUEST_INPUTS, INPUTS, T8_BUNDLES, T8_PROGRAMS, T9_BUNDLES, T9_PROGRAMS, absolute, commands, committed_inputs
 from many_guest import NAMES, import_order
+from local_guest import assert_flat, assert_self
 
 
 GUEST_ROOT = "/Volumes/SystemRoot"
@@ -66,6 +67,8 @@ def fixture_identity(package: Path) -> dict:
     required = {f"fixtures/arm64/{variant}/{lib}/{name}" for variant in ("opcode", "chained")
                 for lib in ("real", "empty") for name in (*CORE_PROGRAMS, *T8_PROGRAMS, "libmst.dylib")}
     required.update(f"fixtures/arm64/{variant}/bundles/{name}.bundle" for variant in ("opcode", "chained") for name in T8_BUNDLES)
+    required.update(f"fixtures/arm64/{variant}/real/{name}" for variant in ("opcode", "chained") for name in T9_PROGRAMS)
+    required.update(f"fixtures/arm64/{variant}/bundles/{name}.bundle" for variant in ("opcode", "chained") for name in T9_BUNDLES)
     required.update(("source/generated/libmany.c", "source/generated/main_many.c"))
     required.update(f"source/pr1170/{name}" for name in INPUTS)
     required.update(f"source/guest/{name}" for name in GUEST_INPUTS)
@@ -88,7 +91,7 @@ def fixture_identity(package: Path) -> dict:
         for name, data in inputs.items():
             assert type(hashes[name]) is str and re.fullmatch(r"[0-9a-f]{64}", hashes[name])
             assert hashlib.sha256(data).hexdigest() == hashes[name] == files[f"source/{source}/{name}"]
-    for name in ("build_guest.py", "run_guest.py", "many_guest.py"):
+    for name in ("build_guest.py", "run_guest.py", "many_guest.py", "local_guest.py"):
         assert digest(Path(__file__).with_name(name)) == manifest["fixture_inputs"][name], f"live {name} differs from committed fixture input"
     assert type(manifest["many_imports"]) is dict and set(manifest["many_imports"]) == {"opcode", "chained"}
     for variant, expected in manifest["many_imports"].items():
@@ -96,6 +99,11 @@ def fixture_identity(package: Path) -> dict:
         for lib in ("real", "empty"):
             executable = package / f"fixtures/arm64/{variant}/{lib}/main_many"
             assert import_order(executable, commands(executable.read_bytes())) == expected
+        for name, symbol in (("b_thread_a", "_mst_thread_a"), ("b_thread_b", "_mst_thread_b")):
+            bundle = package / f"fixtures/arm64/{variant}/bundles/{name}.bundle"
+            assert_flat(bundle, commands(bundle.read_bytes()), symbol)
+        bundle = package / f"fixtures/arm64/{variant}/bundles/b_self.bundle"
+        assert_self(bundle, commands(bundle.read_bytes()))
     return manifest
 
 
@@ -311,6 +319,52 @@ def run_t8(prefix: Prefix, package: Path, label: str, manifest: dict) -> dict[st
     return results
 
 
+def dlopen_error(bundle: Path, symbol: str) -> bytes:
+    path = GUEST_ROOT + str(bundle)
+    return f"dlopen({path}, 6): Symbol not found: {symbol}\n  Referenced from: {path}\n  Expected in: flat namespace\n".encode()
+
+
+def assert_t9_result(result: tuple[int, bytes, bytes], kind: str, first: Path, second: Path) -> None:
+    if kind == "local":
+        expected = b"self-entry=42\nseparate-miss-complete\n" + dlopen_error(first, "_mst_thread_a") + b"\nself-retained=42\n"
+    else:
+        expected = b"thread-a-complete\n" + dlopen_error(first, "_mst_thread_a") + b"\n"
+        expected += b"thread-b-complete\n" + dlopen_error(second, "_mst_thread_b") + b"\n"
+    assert result == (0, expected, b""), (kind, result)
+
+
+def run_t9(prefix: Prefix, package: Path, label: str) -> dict[str, tuple[int, bytes, bytes]]:
+    results = {}
+    for variant in ("opcode", "chained"):
+        fixtures = package / "fixtures/arm64" / variant
+        first, second = (fixtures / "bundles" / f"b_thread_{name}.bundle" for name in ("a", "b"))
+        cases = [("sequential", "main_threads", (GUEST_ROOT + str(first), GUEST_ROOT + str(second), "s")),
+                 ("local", "main_local", (GUEST_ROOT + str(fixtures / "bundles/b_self.bundle"), GUEST_ROOT + str(first)))]
+        cases.extend((f"concurrent-{index:02d}", "main_threads", (GUEST_ROOT + str(first), GUEST_ROOT + str(second), "c")) for index in range(20))
+        for kind, name, arguments in cases:
+            executable = fixtures / "real" / name
+            for on in (False, True) if label == "fix" else (False,):
+                tag = f"t9-{variant}-{kind}-{'on' if on else 'off'}"
+                logs = prefix.root / f"logs-{tag}"
+                logs.mkdir(mode=0o700)
+                variables = [f"DARLING_MISSING_SYMBOLS_LOG={GUEST_ROOT}{logs}"]
+                if on:
+                    variables.append("DARLING_MISSING_SYMBOLS=log")
+                result = prefix.guest(tag, GUEST_ROOT + str(executable), variables, program_arguments=arguments)
+                results[tag] = result
+                assert_t9_result(result, kind, first, second)
+                records = read_records(logs, name, absent=not on)
+                if on:
+                    expected = [{"v": 1, "kind": "missing", "sym": "_mst_thread_a", "lib": "flat namespace",
+                                 "from": GUEST_ROOT + str(first), "arch": "arm64"}]
+                    if kind != "local":
+                        expected.append({"v": 1, "kind": "missing", "sym": "_mst_thread_b", "lib": "flat namespace",
+                                         "from": GUEST_ROOT + str(second), "arch": "arm64"})
+                    assert sorted(records, key=lambda row: json.dumps(row, sort_keys=True)) == sorted(expected, key=lambda row: json.dumps(row, sort_keys=True)), (tag, records)
+                    assert result == results[tag.removesuffix("on") + "off"]
+    return results
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher", type=absolute, required=True)
@@ -335,11 +389,12 @@ def main() -> None:
             try:
                 results[label] = run_core(prefix, args.package, label)
                 results[label].update(run_t8(prefix, args.package, label, manifest))
+                results[label].update(run_t9(prefix, args.package, label))
             finally:
                 prefix.stop()
         for tag, baseline in results["base"].items():
             assert results["fix"][tag] == baseline, f"default-off differs from base: {tag}"
-        print("PASS core t3/t5, SDK-field gate and t8 caps; shutdown complete")
+        print("PASS core, t8 caps, t9/t11 and RTLD_LOCAL; shutdown complete")
 
 
 if __name__ == "__main__":
