@@ -34,6 +34,8 @@ public:
 	void async(void (^block)(void));
 	
 	pa_mainloop_api* getAPI();
+	// The serial queue all pa_* calls and callbacks run on.
+	dispatch_queue_t queue() const { return m_queue; }
 private:
 	static pa_io_event* io_new(pa_mainloop_api *a, int fd, pa_io_event_flags_t events, pa_io_event_cb_t cb, void *userdata);
 	static void io_enable(pa_io_event *e, pa_io_event_flags_t events);

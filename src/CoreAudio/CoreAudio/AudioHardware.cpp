@@ -102,34 +102,49 @@ Boolean AudioObjectHasProperty(AudioObjectID inObjectID,
 		const AudioObjectPropertyAddress* inAddress)
 {
     if((inObjectID&0xffff0000u)==0x44410000u) {
-        UInt32 size=0;return GetStreamPropertyData(inObjectID,inAddress,&size,nullptr)==noErr;
+        UInt32 size=0;bool has=GetStreamPropertyData(inObjectID,inAddress,&size,nullptr)==noErr;
+        rclolAudioTrace("HAS stream=%08x selector=%08x scope=%08x has=%d\n",inObjectID,inAddress->mSelector,inAddress->mScope,has);
+        return has;
     }
 	AudioHardwareImpl* obj = GetObject(inObjectID);
-	if (!obj)
+	if (!obj) {
+		rclolAudioTrace("HAS object=%u selector=%08x BADOBJECT\n",inObjectID,inAddress->mSelector);
 		return 0;
+	}
 	
-	return obj->hasProperty(inAddress);
+	bool has=obj->hasProperty(inAddress);
+	rclolAudioTrace("HAS object=%u selector=%08x scope=%08x elem=%u has=%d\n",inObjectID,inAddress->mSelector,inAddress->mScope,inAddress->mElement,has);
+	return has;
 }
 
 OSStatus AudioObjectIsPropertySettable(AudioObjectID inObjectID,
 		const AudioObjectPropertyAddress* inAddress, Boolean* outIsSettable)
 {
 	AudioHardwareImpl* obj = GetObject(inObjectID);
-	if (!obj)
+	if (!obj) {
+		rclolAudioTrace("SETTABLE object=%08x selector=%08x BADOBJECT\n",inObjectID,inAddress->mSelector);
 		return kAudioHardwareBadObjectError;
+	}
 	
-	return obj->isPropertySettable(inAddress, outIsSettable);
+	OSStatus status=obj->isPropertySettable(inAddress, outIsSettable);
+	rclolAudioTrace("SETTABLE object=%u selector=%08x scope=%08x elem=%u status=%d settable=%d\n",inObjectID,inAddress->mSelector,inAddress->mScope,inAddress->mElement,status,status?0:*outIsSettable);
+	return status;
 }
 
 OSStatus AudioObjectGetPropertyDataSize(AudioObjectID inObjectID,
 		const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize,
 		const void* inQualifierData, UInt32* outDataSize)
 {
-    if((inObjectID&0xffff0000u)==0x44410000u)
-        return GetStreamPropertyData(inObjectID,inAddress,outDataSize,nullptr);
+    if((inObjectID&0xffff0000u)==0x44410000u) {
+        OSStatus status=GetStreamPropertyData(inObjectID,inAddress,outDataSize,nullptr);
+        rclolAudioTrace("SIZE stream=%08x selector=%08x scope=%08x status=%d\n",inObjectID,inAddress->mSelector,inAddress->mScope,status);
+        return status;
+    }
 	AudioHardwareImpl* obj = GetObject(inObjectID);
-	if (!obj)
+	if (!obj) {
+		rclolAudioTrace("SIZE object=%08x selector=%08x BADOBJECT\n",inObjectID,inAddress->mSelector);
 		return kAudioHardwareBadObjectError;
+	}
 	
 	OSStatus status=obj->getPropertyDataSize(inAddress,inQualifierDataSize,inQualifierData,outDataSize);
     rclolAudioTrace("SIZE object=%u selector=%08x scope=%08x status=%d size=%u\n",inObjectID,inAddress->mSelector,inAddress->mScope,status,status?0:*outDataSize);
@@ -157,17 +172,22 @@ OSStatus AudioObjectGetPropertyData(AudioObjectID inObjectID,
         *static_cast<AudioDeviceID*>(value->mOutputData)=found;
         value->mOutputDataSize=sizeof(found);*ioDataSize=sizeof(*value);return noErr;
     }
-    if((inObjectID&0xffff0000u)==0x44410000u)
-        return GetStreamPropertyData(inObjectID,inAddress,ioDataSize,outData);
+    if((inObjectID&0xffff0000u)==0x44410000u) {
+        OSStatus status=GetStreamPropertyData(inObjectID,inAddress,ioDataSize,outData);
+        rclolAudioTrace("GET stream=%08x selector=%08x scope=%08x status=%d\n",inObjectID,inAddress->mSelector,inAddress->mScope,status);
+        return status;
+    }
 	AudioHardwareImpl* obj = GetObject(inObjectID);
-	if (!obj)
+	if (!obj) {
+		rclolAudioTrace("GET object=%08x selector=%08x BADOBJECT\n",inObjectID,inAddress->mSelector);
 		return kAudioHardwareBadObjectError;
+	}
 	
     static unsigned traceCount=0;
-    if(getenv("RCLOL_AUDIO_TRACE") && traceCount++<100)
+    if(rclolAudioTraceEnabled() && traceCount++<100)
         fprintf(stderr,"AUDIO_HARDWARE_GET object=%u property=%08x scope=%08x\n",inObjectID,inAddress->mSelector,inAddress->mScope);
 	OSStatus status=obj->getPropertyData(inAddress,inQualifierDataSize,inQualifierData,ioDataSize,outData);
-    rclolAudioTrace("GET object=%u selector=%08x scope=%08x status=%d size=%u\n",inObjectID,inAddress->mSelector,inAddress->mScope,status,status?0:*ioDataSize);
+    rclolAudioTrace("GET object=%u selector=%08x scope=%08x elem=%u status=%d size=%u\n",inObjectID,inAddress->mSelector,inAddress->mScope,inAddress->mElement,status,status?0:*ioDataSize);
     return status;
 }
 
@@ -176,11 +196,14 @@ OSStatus AudioObjectSetPropertyData(AudioObjectID inObjectID,
 		const void* inQualifierData, UInt32 inDataSize, const void* inData)
 {
 	AudioHardwareImpl* obj = GetObject(inObjectID);
-	if (!obj)
+	if (!obj) {
+		rclolAudioTrace("SET object=%08x selector=%08x scope=%08x elem=%u BADOBJECT\n",inObjectID,inAddress->mSelector,inAddress->mScope,inAddress->mElement);
 		return kAudioHardwareBadObjectError;
+	}
 	
 	OSStatus status=obj->setPropertyData(inAddress,inQualifierDataSize,inQualifierData,inDataSize,inData);
-    rclolAudioTrace("SET object=%u selector=%08x scope=%08x status=%d\n",inObjectID,inAddress->mSelector,inAddress->mScope,status);
+    rclolAudioTrace("SET object=%u selector=%08x scope=%08x elem=%u size=%u value=%g status=%d\n",inObjectID,inAddress->mSelector,inAddress->mScope,inAddress->mElement,inDataSize,
+        (inData && inDataSize==sizeof(Float32))?(double)*(const Float32*)inData:0.0,status);
     return status;
 }
 

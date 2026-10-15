@@ -19,6 +19,7 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "AudioConverter.h"
 #include "AudioConverterImpl.h"
+#include "../AudioTrace.h"
 #include <CarbonCore/MacErrors.h>
 #include <stdexcept>
 #include <cstring>
@@ -32,7 +33,7 @@ static std::mutex converterMutex;
 static std::unordered_set<AudioConverterRef> liveConverters;
 
 static bool audioTrace() {
-    static const bool enabled = std::getenv("RCLOL_AUDIO_TRACE") != nullptr;
+    static const bool enabled = rclolAudioTraceEnabled();
     return enabled;
 }
 

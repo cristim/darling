@@ -283,7 +283,7 @@ OSStatus AudioComponentManager::instantiate(AudioComponent c, AudioComponentInst
 
 	RegisteredComponent& regd = it->second;
     static unsigned traceCount=0;
-    if(getenv("RCLOL_AUDIO_TRACE") && traceCount++<16)
+    if(rclolAudioTraceEnabled() && traceCount++<16)
         rclolAudioTrace("AUDIO_COMPONENT version=%u subtype=%08x user_override=%d\n",
             regd.version,regd.desc.componentSubType,
             regd.bundlePath.find("DarlingRiotAudio.component")!=std::string::npos);

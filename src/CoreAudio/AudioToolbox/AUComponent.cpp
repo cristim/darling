@@ -148,7 +148,14 @@ AudioUnitGetParameter(AudioUnit inUnit,
          AudioUnitElement inElement,
          AudioUnitParameterValue * outValue)
 {
-    return dispatchCall(inUnit, kAudioUnitGetParameterSelect, inID, inScope, inElement, outValue);
+    OSStatus status = dispatchCall(inUnit, kAudioUnitGetParameterSelect, inID, inScope, inElement, outValue);
+    {
+        static unsigned count = 0;
+        if (rclolAudioTraceEnabled() && (count++ < 200 || count % 500 == 0))
+            rclolAudioTrace("UNIT_GET_PARAM unit=%p id=%u scope=%u elem=%u value=%g status=%d\n", (void*) inUnit,
+                (unsigned) inID, (unsigned) inScope, (unsigned) inElement, (outValue && !status) ? (double) *outValue : 0.0, (int) status);
+    }
+    return status;
 }
 
 OSStatus
@@ -159,7 +166,14 @@ AudioUnitSetParameter(AudioUnit inUnit,
          AudioUnitParameterValue inValue,
          UInt32 inBufferOffsetInFrames)
 {
-    return dispatchCall(inUnit, kAudioUnitSetParameterSelect, inID, inScope, inElement, inValue, inBufferOffsetInFrames);
+    OSStatus status = dispatchCall(inUnit, kAudioUnitSetParameterSelect, inID, inScope, inElement, inValue, inBufferOffsetInFrames);
+    {
+        static unsigned count = 0;
+        if (rclolAudioTraceEnabled() && (count++ < 200 || count % 500 == 0))
+            rclolAudioTrace("UNIT_SET_PARAM unit=%p id=%u scope=%u elem=%u value=%g offset=%u status=%d\n", (void*) inUnit,
+                (unsigned) inID, (unsigned) inScope, (unsigned) inElement, (double) inValue, (unsigned) inBufferOffsetInFrames, (int) status);
+    }
+    return status;
 }
 
 OSStatus

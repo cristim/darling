@@ -63,6 +63,7 @@ private:
 		void* inClientData);
 
 	OSStatus doPlayback(const AudioTimeStamp* inNow, AudioBufferList* outOutputData, const AudioTimeStamp* inOutputTime);
+	void traceBlock(const AudioTimeStamp* inNow, const AudioTimeStamp* inOutputTime, OSStatus result, const CAStreamBasicDescription& desc, UInt32 nFrames, AudioBufferList* out);
 	OSStatus doRecord(const AudioTimeStamp* inNow, const AudioBufferList* inInputData, const AudioTimeStamp* inInputTime);
 	
 protected:
@@ -85,6 +86,19 @@ protected:
     // Keep planar conversion storage across callbacks and start/stop cycles.
     std::vector<unsigned char> m_playbackSamples;
     std::vector<unsigned char> m_playbackBufferList;
+
+    // Diagnostic-only block statistics (touched only when audio tracing is on).
+    struct BlockTrace {
+        unsigned long long callbacks = 0, pullFailures = 0;
+        unsigned long long stateCounts[4] = {0,0,0,0};
+        int state = -1;
+        std::vector<float> prev;
+        bool havePrev = false;
+        bool haveTime = false;
+        double lastSample = 0;
+        unsigned long long lastHost = 0;
+        double maxGapMs = 0;
+    } m_blockTrace;
 };
 
 #endif

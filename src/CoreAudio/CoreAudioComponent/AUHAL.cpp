@@ -25,6 +25,10 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <cstdio>
 #include <cstdlib>
 #include <pthread.h>
+#include <atomic>
+#include <cmath>
+#include <algorithm>
+#include <mach/mach_time.h>
 
 #pragma GCC visibility push(default)
 AUDIOCOMPONENT_ENTRY(AUOutputBaseFactory, AUHAL);
@@ -113,7 +117,7 @@ OSStatus AUHAL::Render(AudioUnitRenderActionFlags& ioActionFlags, const AudioTim
 
 OSStatus AUHAL::Start()
 {
-    if(getenv("RCLOL_AUDIO_TRACE")) rclolAudioTrace("AUDIO_UNIT_NATIVE_START output=%d input=%d\n",m_enableOutput,m_enableInput);
+    if(rclolAudioTraceEnabled()) rclolAudioTrace("AUDIO_UNIT_NATIVE_START output=%d input=%d\n",m_enableOutput,m_enableInput);
 	if (m_running)
 		return noErr;
 
@@ -167,8 +171,24 @@ OSStatus AUHAL::Stop()
 	return noErr;
 }
 
+// Volume/mute/gain related property selectors (HAL device properties and AUHAL parameters).
+static bool rclolVolumeRelated(UInt32 id)
+{
+	switch (id)
+	{
+		case 'volm': case 'vold': case 'vdb#': case 'mute': case 'thru':
+		case 'pvol': case 'pvod': case 'mvol': case 'mbal': case 'span':
+		case 'svlm': case 'smut': case 'v2db': case 'db2v':
+			return true;
+	}
+	return false;
+}
+
 OSStatus AUHAL::SetProperty(AudioUnitPropertyID inID, AudioUnitScope inScope, AudioUnitElement inElement, const void* inData, UInt32 inDataSize)
 {
+	if (rclolAudioTraceEnabled() && rclolVolumeRelated(inID))
+		rclolAudioTrace("AUHAL_SET_VOLPROP property=%08x scope=%u element=%u size=%u value=%g\n",inID,inScope,inElement,inDataSize,
+			(inData && inDataSize==sizeof(Float32))?(double)*(const Float32*)inData:0.0);
 	switch (inID)
 	{
         case kAudioDevicePropertyBufferFrameSize: {
@@ -228,7 +248,7 @@ OSStatus AUHAL::SetProperty(AudioUnitPropertyID inID, AudioUnitScope inScope, Au
 	}
     {
     OSStatus status=AUBase::SetProperty(inID,inScope,inElement,inData,inDataSize);
-    if(status && getenv("RCLOL_AUDIO_TRACE")) rclolAudioTrace("AUDIO_UNIT_SET property=%u scope=%u element=%u status=%d\n",inID,inScope,inElement,status);
+    if(status && rclolAudioTraceEnabled()) rclolAudioTrace("AUDIO_UNIT_SET property=%u scope=%u element=%u status=%d\n",inID,inScope,inElement,status);
     return status;
     }
 InvalidPropertyValue:
@@ -237,6 +257,8 @@ InvalidPropertyValue:
 
 OSStatus AUHAL::GetPropertyInfo(AudioUnitPropertyID inID, AudioUnitScope inScope, AudioUnitElement inElement, UInt32& outDataSize, Boolean& outWritable)
 {
+	if (rclolAudioTraceEnabled() && rclolVolumeRelated(inID))
+		rclolAudioTrace("AUHAL_INFO_VOLPROP property=%08x scope=%u element=%u\n",inID,inScope,inElement);
 	switch (inID)
 	{
         case kAudioDevicePropertyBufferFrameSize:
@@ -267,12 +289,14 @@ OSStatus AUHAL::GetPropertyInfo(AudioUnitPropertyID inID, AudioUnitScope inScope
 		}
 	}
     OSStatus status=AUBase::GetPropertyInfo(inID,inScope,inElement,outDataSize,outWritable);
-    if(status && getenv("RCLOL_AUDIO_TRACE")) rclolAudioTrace("AUDIO_UNIT_INFO property=%u scope=%u element=%u status=%d\n",inID,inScope,inElement,status);
+    if(status && rclolAudioTraceEnabled()) rclolAudioTrace("AUDIO_UNIT_INFO property=%u scope=%u element=%u status=%d\n",inID,inScope,inElement,status);
     return status;
 }
 
 OSStatus AUHAL::GetProperty(AudioUnitPropertyID inID, AudioUnitScope inScope, AudioUnitElement inElement, void* outData)
 {
+	if (rclolAudioTraceEnabled() && rclolVolumeRelated(inID))
+		rclolAudioTrace("AUHAL_GET_VOLPROP property=%08x scope=%u element=%u\n",inID,inScope,inElement);
 	switch (inID)
 	{
         case kAudioDevicePropertyBufferFrameSize: {
@@ -340,11 +364,88 @@ OSStatus AUHAL::recordCallback(AudioObjectID inObjectID,
 	return This->doRecord(inNow, inInputData, inInputTime);
 }
 
+// Diagnostic only: classify each rendered block (see AUDIO_BLOCK_STATE).
+void AUHAL::traceBlock(const AudioTimeStamp* inNow, const AudioTimeStamp* inOutputTime, OSStatus result,
+    const CAStreamBasicDescription& desc, UInt32 nFrames, AudioBufferList* out)
+{
+    static std::atomic<unsigned> stateLines(0);
+    static mach_timebase_info_data_t tb={0,0};
+    if(!tb.denom) mach_timebase_info(&tb);
+    BlockTrace& t=m_blockTrace;
+    const unsigned long long cb=++t.callbacks;
+    if(result) {
+        if(++t.pullFailures<=50 || t.pullFailures%200==0)
+            rclolAudioTrace("AUDIO_PULL_FAIL unit=%p cb=%llu status=%d frames=%u count=%llu\n",
+                (void*)this,cb,(int)result,nFrames,t.pullFailures);
+        return;
+    }
+    if(!desc.IsFloat() || desc.mBitsPerChannel!=32 || !nFrames || !desc.mChannelsPerFrame) return;
+    const bool planar=desc.mFormatFlags&kAudioFormatFlagIsNonInterleaved;
+    const UInt32 ch=desc.mChannelsPerFrame;
+    const float* base=planar?(const float*)m_playbackSamples.data():(const float*)out->mBuffers[0].mData;
+    if(!base) return;
+    auto at=[&](UInt32 c,UInt32 f)->float { return planar?base[(size_t)c*nFrames+f]:base[(size_t)f*ch+c]; };
+    float peak[2]={0,0}; double sq[2]={0,0}; bool halves[2]={true,true}; bool zero=true;
+    const UInt32 half=nFrames/2;
+    for(UInt32 c=0;c<ch && c<2;++c) {
+        for(UInt32 f=0;f<nFrames;++f) {
+            float v=at(c,f);
+            if(v!=0 || std::signbit(v)) { if(v!=0) zero=false; }
+            peak[c]=std::max(peak[c],std::abs(v)); sq[c]+=(double)v*v;
+            if(f<half && (nFrames&1)==0) {
+                float w=at(c,f+half);
+                if(memcmp(&v,&w,4)) halves[c]=false;
+            }
+        }
+    }
+    const bool halvesSame=(nFrames&1)==0 && halves[0] && (ch<2 || halves[1]);
+    const double rms0=sqrt(sq[0]/nFrames), rms1=ch>1?sqrt(sq[1]/nFrames):0;
+    bool same=false;
+    const size_t total=(size_t)nFrames*ch;
+    if(t.havePrev && t.prev.size()==total) {
+        same=true;
+        for(UInt32 c=0;c<ch&&same;++c) for(UInt32 f=0;f<nFrames;++f) {
+            float v=at(c,f);
+            if(memcmp(&v,&t.prev[(size_t)c*nFrames+f],4)) { same=false; break; }
+        }
+    }
+    // 0 silent, 1 live, 2 repeat-of-previous-nonsilent, 3 halves-identical-nonsilent
+    int state=zero?0:same?2:halvesSame?3:1;
+    t.prev.resize(total);
+    for(UInt32 c=0;c<ch;++c) for(UInt32 f=0;f<nFrames;++f) t.prev[(size_t)c*nFrames+f]=at(c,f);
+    t.havePrev=true;
+    ++t.stateCounts[state];
+    static const char* names[4]={"silent","live","repeat","halves"};
+    double dSample=0, dHostMs=0;
+    const double sample=inOutputTime->mSampleTime;
+    if(t.haveTime) {
+        dSample=sample-t.lastSample;
+        dHostMs=(double)(inOutputTime->mHostTime-t.lastHost)*tb.numer/tb.denom/1e6;
+        if(dHostMs>t.maxGapMs) t.maxGapMs=dHostMs;
+    }
+    t.haveTime=true; t.lastSample=sample; t.lastHost=inOutputTime->mHostTime;
+    const bool transition=state!=t.state;
+    if(transition && t.state>=0 && stateLines.fetch_add(1)<2000)
+        rclolAudioTrace("AUDIO_BLOCK_STATE unit=%p from=%s to=%s cb=%llu frames=%u peakL=%g peakR=%g rmsL=%g rmsR=%g\n",
+            (void*)this,names[t.state],names[state],cb,nFrames,peak[0],peak[1],rms0,rms1);
+    if(cb<=40 || cb%200==0 || transition)
+        rclolAudioTrace("AUDIO_BLOCK unit=%p cb=%llu state=%s frames=%u peakL=%g peakR=%g rmsL=%g rmsR=%g "
+            "halvesL=%d halvesR=%d same=%d zero=%d outSample=%.0f nowSample=%.0f dSample=%.0f outHost=%llu nowHost=%llu "
+            "dHostMs=%.3f maxGapMs=%.3f\n",
+            (void*)this,cb,names[state],nFrames,peak[0],peak[1],rms0,rms1,(int)halves[0],(int)halves[1],(int)same,(int)zero,
+            sample,inNow->mSampleTime,dSample,(unsigned long long)inOutputTime->mHostTime,
+            (unsigned long long)inNow->mHostTime,dHostMs,t.maxGapMs);
+    if(cb%2000==0)
+        rclolAudioTrace("AUDIO_BLOCK_SUMMARY unit=%p cb=%llu silent=%llu live=%llu repeat=%llu halves=%llu pullFail=%llu maxGapMs=%.3f\n",
+            (void*)this,cb,t.stateCounts[0],t.stateCounts[1],t.stateCounts[2],t.stateCounts[3],t.pullFailures,t.maxGapMs);
+    t.state=state;
+}
+
 OSStatus AUHAL::doPlayback(const AudioTimeStamp* inNow, AudioBufferList* outOutputData, const AudioTimeStamp* inOutputTime)
 {
 	// std::cout << "AUHAL::DoPlayback()\n";
     static unsigned stackTraces=0;
-    if(getenv("RCLOL_AUDIO_TRACE") && stackTraces++<2)
+    if(rclolAudioTraceEnabled() && stackTraces++<2)
         rclolAudioTrace("AUDIO_CALLBACK_STACK bytes=%zu\n",pthread_get_stacksize_np(pthread_self()));
 	if (!HasInput(0))
 	{
@@ -384,8 +485,39 @@ OSStatus AUHAL::doPlayback(const AudioTimeStamp* inNow, AudioBufferList* outOutp
         result=GetInput(kOutputBus)->PullInputWithBufferList(flags,*inNow,kOutputBus,nFrames,outOutputData);
     }
 
+    if(rclolAudioTraceEnabled()) traceBlock(inNow,inOutputTime,result,desc,nFrames,outOutputData);
+
+    // Diagnostic: Chromium's audio source can start handing out one identical
+    // block forever (heard as static). Log the timestamp Darling supplied at the
+    // moment that begins, so we can tell whether our clock inputs look sane.
+    {
+        const unsigned char* produced;
+        size_t producedBytes;
+        if(desc.mFormatFlags&kAudioFormatFlagIsNonInterleaved) {
+            produced=m_playbackSamples.data();
+            producedBytes=(size_t)nFrames*frameBytes;
+        } else {
+            produced=(const unsigned char*)outOutputData->mBuffers[0].mData;
+            producedBytes=outOutputData->mBuffers[0].mDataByteSize;
+        }
+        uint64_t sum=1469598103934665603ull;
+        for(size_t i=0;i<producedBytes;++i) sum=(sum^produced[i])*1099511628211ull;
+        static uint64_t lastSum=0;
+        static unsigned repeatRun=0;
+        if(producedBytes && sum==lastSum) {
+            ++repeatRun;
+            if(rclolAudioTraceEnabled() && (repeatRun==2 || repeatRun%500==0))
+                rclolAudioTrace("AUDIO_INPUT_REPEAT frames=%u run=%u host=%llu sample=%.0f flags=%u\n",
+                    nFrames,repeatRun,(unsigned long long)inOutputTime->mHostTime,inOutputTime->mSampleTime,
+                    (unsigned)inOutputTime->mFlags);
+        } else {
+            repeatRun=0;
+        }
+        lastSum=sum;
+    }
+
     static unsigned traceRenders=0;
-    if (getenv("RCLOL_AUDIO_TRACE") && traceRenders++ < 16) {
+    if (rclolAudioTraceEnabled() && traceRenders++ < 16) {
         float peak=0;
         if (!result && desc.IsFloat() && sampleBytes==4) {
             const float* samples=static_cast<const float*>(outOutputData->mBuffers[0].mData);

@@ -81,7 +81,7 @@ public:
     OSStatus SetParameter(AudioUnitParameterID id, AudioUnitScope scope, AudioUnitElement element,
                           AudioUnitParameterValue gain, UInt32) override {
         static std::atomic<unsigned> traceCount{0};
-        if (getenv("RCLOL_AUDIO_TRACE") && traceCount++ < 64)
+        if (rclolAudioTraceEnabled() && traceCount++ < 64)
             rclolAudioTrace("AUDIO_MATRIX_PARAM id=%u scope=%u element=%08x gain=%g\n",id,scope,element,gain);
         std::lock_guard<std::mutex> lock(mMutex);
         if (!std::isfinite(gain)) return kAudioUnitErr_InvalidParameter;
