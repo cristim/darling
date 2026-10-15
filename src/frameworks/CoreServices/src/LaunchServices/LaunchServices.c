@@ -19,6 +19,7 @@
 
 #include <LaunchServices/LaunchServices.h>
 #include <LaunchServices/LaunchServicesPriv.h>
+#include "LSHostOpen.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,6 +81,12 @@ OSStatus LSOpenFromURLSpec(const LSLaunchURLSpec *inLaunchSpec, CFURLRef *outLau
 
 			if (extension != NULL)
 				CFRelease(extension);
+		}
+		else if (_LSIsHostOpenURL(url))
+		{
+			temp = _LSOpenURLOnHost(url);
+			if (temp)
+				ret = temp;
 		}
 		else
 		{

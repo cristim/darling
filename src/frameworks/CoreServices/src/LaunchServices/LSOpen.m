@@ -21,6 +21,7 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <LaunchServices/LaunchServices.h>
 #include <LaunchServices/LaunchServicesPriv.h>
 #include <CarbonCore/MacErrors.h>
+#include "LSHostOpen.h"
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -51,6 +52,9 @@ LSOpenOneURL(CFURLRef url, const LSApplicationParameters *params)
 
 	if (url == NULL)
 		return paramErr;
+
+	if ((params == NULL || params->application == NULL) && _LSIsHostOpenURL(url))
+		return _LSOpenURLOnHost(url);
 
 	// open(1) builds URLs via +URLWithString from a raw path, which may yield
 	// a scheme-less URL object. CFURLCopyFileSystemPath works either way.
