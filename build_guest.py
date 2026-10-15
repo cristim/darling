@@ -29,7 +29,7 @@ INPUTS = (
 GUEST_INPUTS = ("build_guest.py", "run_guest.py", "many_guest.py", "fx/libguest.c", "fx/main_multi_weak.c", "fx/main_objc.c",
                 "fx/main_dlopen.c", "fx/sysstub.c", "fx/bundle.c", "local_guest.py", "fx/guest_api.h", "fx/libthreadstub.c",
                 "fx/main_threads.c", "fx/main_local.c", "fx/bundle_self.c", "alias_guest.py",
-                "fx/main_alias.c", "fx/alias_leaf.c", "fx/alias_trigger.c")
+                "fx/main_alias.c", "fx/alias_leaf.c", "fx/alias_trigger.c", "fx/main_fork.c")
 CORE_PROGRAMS = ("main_multi", "main_weak", "main_multi_weak", "main_objc", "main_multi_oldsdk")
 T8_PROGRAMS = ("main_many", "main_dlopen")
 T8_BUNDLES = ("b_short", "b_long4095", "b_long4096")
@@ -76,7 +76,7 @@ def retain_inputs(destination: Path, inputs: dict[str, bytes]) -> dict[str, str]
 
 
 def compile_guest(cc: list[str], sources: Path, obj: Path) -> None:
-    for name in ("libguest", "main_multi_weak", "main_objc"):
+    for name in ("libguest", "main_multi_weak", "main_objc", "main_fork"):
         command([*cc, "-c", str(sources / "fx" / f"{name}.c"), "-o", str(obj / f"{name}.o")])
 
 
@@ -218,7 +218,7 @@ def main() -> None:
         command([*link, "-bundle", "-undefined", "dynamic_lookup", "-o", str(self_bundle), str(obj / "bundle_self.o")])
         assert_encoding(self_bundle, variant)
         patch_self(self_bundle, commands(self_bundle.read_bytes()))
-        for name in T9_PROGRAMS:
+        for name in (*T9_PROGRAMS, "main_fork"):
             command([*link, "-e", "_main", "-o", str(real / name), str(obj / f"{name}.o"), str(obj / "libSystem.guest.dylib")])
         aliases = real.parent / "aliases"
         build_aliases(link, obj, aliases, command, commands)

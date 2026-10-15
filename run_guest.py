@@ -69,6 +69,7 @@ def fixture_identity(package: Path) -> dict:
                 for lib in ("real", "empty") for name in (*CORE_PROGRAMS, *T8_PROGRAMS, "libmst.dylib")}
     required.update(f"fixtures/arm64/{variant}/bundles/{name}.bundle" for variant in ("opcode", "chained") for name in T8_BUNDLES)
     required.update(f"fixtures/arm64/{variant}/real/{name}" for variant in ("opcode", "chained") for name in T9_PROGRAMS)
+    required.update(f"fixtures/arm64/{variant}/real/main_fork" for variant in ("opcode", "chained"))
     required.update(f"fixtures/arm64/{variant}/bundles/{name}.bundle" for variant in ("opcode", "chained") for name in T9_BUNDLES)
     required.update(("source/generated/libmany.c", "source/generated/main_many.c"))
     for variant in ("opcode", "chained"):
@@ -403,6 +404,77 @@ def run_aliases(prefix: Prefix, package: Path, label: str) -> dict[str, tuple[in
     return results
 
 
+def assert_fork_result(result: tuple[int, bytes, bytes], first: Path, second: Path) -> None:
+    expected = b"prefork: " + dlopen_error(first, "_mst_thread_a") + b"\n"
+    expected += b"child: " + dlopen_error(second, "_mst_thread_b") + b"\n"
+    expected += b"parent: " + dlopen_error(first, "_mst_thread_a") + b"\n"
+    assert result == (0, expected, b""), result
+
+
+def assert_fork_records(records: list[dict], first: Path, second: Path, counter: bool) -> None:
+    a = {"v": 1, "kind": "missing", "sym": "_mst_thread_a", "lib": "flat namespace",
+         "from": GUEST_ROOT + str(first), "arch": "arm64"}
+    b = dict(a, sym="_mst_thread_b", **{"from": GUEST_ROOT + str(second)})
+    final = {"v": 1, "kind": "truncated"}
+    expected = [a] * 4095 + [b, final, a, final] if counter else [a, b, a]
+    assert records == expected, "fork inherited-fd/counter sequence differs"
+
+
+def run_fork(prefix: Prefix, package: Path, label: str) -> dict[str, tuple[int, bytes, bytes]]:
+    home_result = prefix.guest("fork-home", "/bin/sh", [], program_arguments=("-c", 'printf %s "$HOME"'))
+    assert home_result[0] == 0 and not home_result[2]
+    home_text = home_result[1].decode()
+    assert home_text and not any(character in home_text for character in "\n\r\x00")
+    guest_home = Path(home_text)
+    assert guest_home.is_absolute() and ".." not in guest_home.parts and str(guest_home) != "/"
+    mapped = (prefix.prefix / str(guest_home).lstrip("/")).resolve()
+    assert mapped.is_relative_to(prefix.prefix.resolve()), "HOME escapes owned prefix"
+    results = {}
+    for variant in ("opcode", "chained"):
+        fixtures = package / "fixtures/arm64" / variant
+        first, second = (fixtures / "bundles" / f"b_thread_{name}.bundle" for name in ("a", "b"))
+        for mode in ("s", "c"):
+            for setting in (("unset", "empty", "empty-explicit", "on") if label == "fix" else ("unset", "empty", "empty-explicit")):
+                tag = f"fork-{variant}-{mode}-{setting}"
+                private = mapped / tag
+                private.mkdir(mode=0o700, parents=True)
+                default = private / "Library/Logs/Darling/MissingSymbols"
+                assert not default.exists() and not default.is_symlink(), f"default directory already exists: {default}"
+                variables = [f"HOME={guest_home / tag}"]
+                if setting != "unset":
+                    variables.append("DARLING_MISSING_SYMBOLS=" + ("log" if setting == "on" else ""))
+                logs = None
+                if setting in ("empty-explicit", "on"):
+                    logs = prefix.root / f"logs-{tag}"
+                    logs.mkdir(mode=0o700)
+                    variables.append(f"DARLING_MISSING_SYMBOLS_LOG={GUEST_ROOT}{logs}")
+                (prefix.root / f"{tag}-environment.json").write_text(json.dumps({"variables": variables, "default": str(default), "explicit": str(logs) if logs else None}) + "\n")
+                result = prefix.guest(tag, GUEST_ROOT + str(fixtures / "real/main_fork"), variables,
+                                      program_arguments=(GUEST_ROOT + str(first), GUEST_ROOT + str(second), mode))
+                results[tag] = result
+                assert_fork_result(result, first, second)
+                assert not default.exists() and not default.is_symlink(), f"unexpected default directory: {default}"
+                if logs is not None:
+                    records = read_records(logs, "main_fork", absent=setting != "on")
+                    if setting == "on":
+                        assert_fork_records(records, first, second, mode == "c")
+                if setting != "unset":
+                    assert result == results[f"fork-{variant}-{mode}-unset"]
+    return results
+
+
+def run_checks(prefix: Prefix, package: Path, label: str, manifest: dict) -> dict:
+    try:
+        results = run_core(prefix, package, label)
+        results.update(run_t8(prefix, package, label, manifest))
+        results.update(run_t9(prefix, package, label))
+        results.update(run_aliases(prefix, package, label))
+        results.update(run_fork(prefix, package, label))
+        return results
+    finally:
+        prefix.stop()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher", type=absolute, required=True)
@@ -424,16 +496,10 @@ def main() -> None:
         results = {}
         for label in ("base", "fix"):
             prefix = Prefix(args.launcher, identities[label], root, label)
-            try:
-                results[label] = run_core(prefix, args.package, label)
-                results[label].update(run_t8(prefix, args.package, label, manifest))
-                results[label].update(run_t9(prefix, args.package, label))
-                results[label].update(run_aliases(prefix, args.package, label))
-            finally:
-                prefix.stop()
+            results[label] = run_checks(prefix, args.package, label, manifest)
         for tag, baseline in results["base"].items():
             assert results["fix"][tag] == baseline, f"default-off differs from base: {tag}"
-        print("PASS core, caps, threads, local bundles and aliases; shutdown complete")
+        print("PASS core, caps, threads, local bundles, aliases and fork; shutdown complete")
 
 
 if __name__ == "__main__":

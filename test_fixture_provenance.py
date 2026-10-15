@@ -56,7 +56,7 @@ def package(root: Path) -> tuple[Path, dict]:
                 path = result / "fixtures/arm64" / variant / lib / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(f"authored placeholder; never executable: {variant}/{lib}/{name}\n")
-        for name in ("main_threads", "main_local"):
+        for name in ("main_threads", "main_local", "main_fork"):
             path = result / "fixtures/arm64" / variant / "real" / name
             path.write_text("authored non-executable thread/local placeholder\n")
         for name in ("b_short", "b_long4095", "b_long4096", "b_thread_a", "b_thread_b", "b_self"):
@@ -111,7 +111,8 @@ def test_empty_and_partial_files(root: Path) -> None:
         invalid = copy.deepcopy(original)
         del invalid["files"][required]
         preflight(output, invalid, should_reach=False)
-    for required in ("fixtures/arm64/opcode/real/main_threads", "fixtures/arm64/chained/bundles/b_self.bundle"):
+    for required in ("fixtures/arm64/opcode/real/main_threads", "fixtures/arm64/chained/bundles/b_self.bundle",
+                     "fixtures/arm64/opcode/real/main_fork", "fixtures/arm64/chained/real/main_fork", "source/guest/fx/main_fork.c"):
         invalid = copy.deepcopy(original)
         del invalid["files"][required]
         preflight(output, invalid, should_reach=False)
@@ -158,7 +159,7 @@ def test_compile_retained_committed_sources(root: Path) -> None:
 
     with patch.object(build_guest, "command", side_effect=fake_compile):
         build_guest.compile_guest(["fake-compiler"], destination, output / "obj")
-    assert set(invoked) == {"libguest.c", "main_multi_weak.c", "main_objc.c"}
+    assert set(invoked) == {"libguest.c", "main_multi_weak.c", "main_objc.c", "main_fork.c"}
     alias_calls = []
 
     def fake_alias_compile(arguments: list[str]) -> bytes:
