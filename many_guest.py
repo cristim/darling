@@ -101,7 +101,7 @@ def chained_imports(data: bytes) -> list[tuple[str, int, bool]]:
     return result
 
 
-def import_details(path: Path, load_commands: list[tuple[int, int, int]]) -> tuple[list[str], list[tuple[str, int, bool]]]:
+def import_details(path: Path, load_commands: list[tuple[int, int, int]], *, include_lazy: bool = True) -> tuple[list[str], list[tuple[str, int, bool]]]:
     data = path.read_bytes()
     libraries = []
     imports = []
@@ -114,7 +114,7 @@ def import_details(path: Path, load_commands: list[tuple[int, int, int]]) -> tup
             libraries.append(data[offset + name_offset:end].decode("ascii"))
         elif kind == 0x80000022:
             encodings += 1
-            for field in (16, 32):
+            for field in (16, 32) if include_lazy else (16,):
                 start, length = struct.unpack_from("<II", data, offset + field)
                 assert start + length <= len(data)
                 imports.extend(opcode_imports(data[start:start + length], lazy=field == 32))

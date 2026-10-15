@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import build_guest
 import run_guest
+from alias_guest import LAYOUT, LEAVES, compile_sources as compile_alias_sources
 from many_guest import NAMES
 
 
@@ -62,6 +63,16 @@ def package(root: Path) -> tuple[Path, dict]:
             path = result / "fixtures/arm64" / variant / "bundles" / f"{name}.bundle"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("authored non-executable bundle placeholder\n")
+        for kind, libraries in LAYOUT.items():
+            base = result / "fixtures/arm64" / variant / "aliases" / kind
+            for mode in ("control", "missing"):
+                for name in (*libraries, "libtrigger.dylib", "main_alias"):
+                    path = base / mode / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("authored non-executable alias placeholder\n")
+            path = base / "original" / LEAVES[kind][0]
+            path.parent.mkdir()
+            path.write_text("authored original-leaf placeholder\n")
     for name in ("libmany.c", "main_many.c"):
         path = result / "source/generated" / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,7 +90,7 @@ def preflight(package_path: Path, manifest: dict, *, should_reach: bool) -> None
     (package_path / "manifest.json").write_text(json.dumps(manifest))
     arguments = ["run_guest.py", "--launcher", sys.executable, "--base-receipt", "/tmp/base-receipt", "--fix-receipt", "/tmp/fix-receipt", "--package", str(package_path)]
     reached = False
-    with patch.object(sys, "argv", arguments), patch.object(run_guest, "runtime_identity", return_value={}), patch.object(run_guest.fcntl, "flock", side_effect=ExecutionReached), patch.object(run_guest, "commands", return_value=[]), patch.object(run_guest, "import_order", return_value=list(NAMES)), patch.object(run_guest, "assert_flat"), patch.object(run_guest, "assert_self"):
+    with patch.object(sys, "argv", arguments), patch.object(run_guest, "runtime_identity", return_value={}), patch.object(run_guest.fcntl, "flock", side_effect=ExecutionReached), patch.object(run_guest, "commands", return_value=[]), patch.object(run_guest, "import_order", return_value=list(NAMES)), patch.object(run_guest, "assert_flat"), patch.object(run_guest, "assert_self"), patch.object(run_guest, "assert_pair"):
         try:
             run_guest.main()
         except ExecutionReached:
@@ -101,6 +112,11 @@ def test_empty_and_partial_files(root: Path) -> None:
         del invalid["files"][required]
         preflight(output, invalid, should_reach=False)
     for required in ("fixtures/arm64/opcode/real/main_threads", "fixtures/arm64/chained/bundles/b_self.bundle"):
+        invalid = copy.deepcopy(original)
+        del invalid["files"][required]
+        preflight(output, invalid, should_reach=False)
+    for required in ("fixtures/arm64/opcode/aliases/cycle/missing/main_alias", "fixtures/arm64/chained/aliases/diamond/control/libC.dylib",
+                     "fixtures/arm64/opcode/aliases/cycle/original/libA.dylib"):
         invalid = copy.deepcopy(original)
         del invalid["files"][required]
         preflight(output, invalid, should_reach=False)
@@ -143,6 +159,21 @@ def test_compile_retained_committed_sources(root: Path) -> None:
     with patch.object(build_guest, "command", side_effect=fake_compile):
         build_guest.compile_guest(["fake-compiler"], destination, output / "obj")
     assert set(invoked) == {"libguest.c", "main_multi_weak.c", "main_objc.c"}
+    alias_calls = []
+
+    def fake_alias_compile(arguments: list[str]) -> bytes:
+        assert arguments[:2] == ["fake-compiler", "-c"]
+        source = Path(arguments[2])
+        assert source.parent == destination / "fx"
+        assert source.read_bytes() == pinned[f"fx/{source.name}"]
+        assert source.read_bytes() != (repo / "fx" / source.name).read_bytes()
+        alias_calls.append(arguments)
+        return b""
+
+    compile_alias_sources(["fake-compiler"], output / "obj", destination, fake_alias_compile)
+    assert len(alias_calls) == 6
+    assert {Path(arguments[2]).name for arguments in alias_calls} == {"alias_leaf.c", "alias_trigger.c", "main_alias.c"}
+    assert {value for arguments in alias_calls for value in arguments if value.startswith("-DALIAS_EXPECT=")} == {"-DALIAS_EXPECT=71", "-DALIAS_EXPECT=83"}
 
 
 def test_source_snapshot_and_live_runner_mismatch(root: Path) -> None:

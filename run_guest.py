@@ -20,6 +20,7 @@ import tempfile
 from build_guest import CORE_PROGRAMS, GUEST_INPUTS, INPUTS, T8_BUNDLES, T8_PROGRAMS, T9_BUNDLES, T9_PROGRAMS, absolute, commands, committed_inputs
 from many_guest import NAMES, import_order
 from local_guest import assert_flat, assert_self
+from alias_guest import LAYOUT, LEAVES, assert_pair
 
 
 GUEST_ROOT = "/Volumes/SystemRoot"
@@ -70,6 +71,11 @@ def fixture_identity(package: Path) -> dict:
     required.update(f"fixtures/arm64/{variant}/real/{name}" for variant in ("opcode", "chained") for name in T9_PROGRAMS)
     required.update(f"fixtures/arm64/{variant}/bundles/{name}.bundle" for variant in ("opcode", "chained") for name in T9_BUNDLES)
     required.update(("source/generated/libmany.c", "source/generated/main_many.c"))
+    for variant in ("opcode", "chained"):
+        for kind, images in LAYOUT.items():
+            required.update(f"fixtures/arm64/{variant}/aliases/{kind}/{mode}/{name}" for mode in ("control", "missing")
+                            for name in (*images, "libtrigger.dylib", "main_alias"))
+            required.add(f"fixtures/arm64/{variant}/aliases/{kind}/original/{LEAVES[kind][0]}")
     required.update(f"source/pr1170/{name}" for name in INPUTS)
     required.update(f"source/guest/{name}" for name in GUEST_INPUTS)
     assert required <= files.keys(), "manifest omits required core artifact/source"
@@ -91,7 +97,7 @@ def fixture_identity(package: Path) -> dict:
         for name, data in inputs.items():
             assert type(hashes[name]) is str and re.fullmatch(r"[0-9a-f]{64}", hashes[name])
             assert hashlib.sha256(data).hexdigest() == hashes[name] == files[f"source/{source}/{name}"]
-    for name in ("build_guest.py", "run_guest.py", "many_guest.py", "local_guest.py"):
+    for name in ("build_guest.py", "run_guest.py", "many_guest.py", "local_guest.py", "alias_guest.py"):
         assert digest(Path(__file__).with_name(name)) == manifest["fixture_inputs"][name], f"live {name} differs from committed fixture input"
     assert type(manifest["many_imports"]) is dict and set(manifest["many_imports"]) == {"opcode", "chained"}
     for variant, expected in manifest["many_imports"].items():
@@ -104,6 +110,8 @@ def fixture_identity(package: Path) -> dict:
             assert_flat(bundle, commands(bundle.read_bytes()), symbol)
         bundle = package / f"fixtures/arm64/{variant}/bundles/b_self.bundle"
         assert_self(bundle, commands(bundle.read_bytes()))
+        for kind in LAYOUT:
+            assert_pair(package / f"fixtures/arm64/{variant}/aliases/{kind}", kind, commands)
     return manifest
 
 
@@ -365,6 +373,36 @@ def run_t9(prefix: Prefix, package: Path, label: str) -> dict[str, tuple[int, by
     return results
 
 
+def run_aliases(prefix: Prefix, package: Path, label: str) -> dict[str, tuple[int, bytes, bytes]]:
+    results = {}
+    for variant in ("opcode", "chained"):
+        for kind in LAYOUT:
+            for mode in ("control", "missing"):
+                directory = package / f"fixtures/arm64/{variant}/aliases/{kind}/{mode}"
+                executable = directory / "main_alias"
+                for on in (False, True) if label == "fix" else (False,):
+                    tag = f"alias-{variant}-{kind}-{mode}-{'on' if on else 'off'}"
+                    logs = prefix.root / f"logs-{tag}"
+                    logs.mkdir(mode=0o700)
+                    variables = [f"DARLING_MISSING_SYMBOLS_LOG={GUEST_ROOT}{logs}"]
+                    if on:
+                        variables.append("DARLING_MISSING_SYMBOLS=log")
+                    result = prefix.guest(tag, GUEST_ROOT + str(executable), variables)
+                    results[tag] = result
+                    if mode == "control":
+                        assert result == (0, b"alias-control-complete\n", b""), (tag, result)
+                    else:
+                        assert result[0] not in (0, 124, 127) and not result[1]
+                        assert result[2].count(b"Symbol not found: _mst_alias_trigger\n") == 1, (tag, result)
+                    records = read_records(logs, "main_alias", absent=not on or mode == "control")
+                    if on and mode == "missing":
+                        assert records == [{"v": 1, "kind": "missing", "sym": "_mst_alias_trigger",
+                                            "lib": GUEST_ROOT + str(directory / "libtrigger.dylib"),
+                                            "from": GUEST_ROOT + str(executable), "arch": "arm64"}], (tag, records)
+                        assert result == results[tag.removesuffix("on") + "off"]
+    return results
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher", type=absolute, required=True)
@@ -390,11 +428,12 @@ def main() -> None:
                 results[label] = run_core(prefix, args.package, label)
                 results[label].update(run_t8(prefix, args.package, label, manifest))
                 results[label].update(run_t9(prefix, args.package, label))
+                results[label].update(run_aliases(prefix, args.package, label))
             finally:
                 prefix.stop()
         for tag, baseline in results["base"].items():
             assert results["fix"][tag] == baseline, f"default-off differs from base: {tag}"
-        print("PASS core, t8 caps, t9/t11 and RTLD_LOCAL; shutdown complete")
+        print("PASS core, caps, threads, local bundles and aliases; shutdown complete")
 
 
 if __name__ == "__main__":

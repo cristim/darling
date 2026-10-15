@@ -19,6 +19,7 @@ import subprocess
 
 from many_guest import generate, import_order
 from local_guest import assert_flat, patch_self
+from alias_guest import build as build_aliases, compile_sources as compile_alias_sources
 
 
 INPUTS = (
@@ -27,7 +28,8 @@ INPUTS = (
 )
 GUEST_INPUTS = ("build_guest.py", "run_guest.py", "many_guest.py", "fx/libguest.c", "fx/main_multi_weak.c", "fx/main_objc.c",
                 "fx/main_dlopen.c", "fx/sysstub.c", "fx/bundle.c", "local_guest.py", "fx/guest_api.h", "fx/libthreadstub.c",
-                "fx/main_threads.c", "fx/main_local.c", "fx/bundle_self.c")
+                "fx/main_threads.c", "fx/main_local.c", "fx/bundle_self.c", "alias_guest.py",
+                "fx/main_alias.c", "fx/alias_leaf.c", "fx/alias_trigger.c")
 CORE_PROGRAMS = ("main_multi", "main_weak", "main_multi_weak", "main_objc", "main_multi_oldsdk")
 T8_PROGRAMS = ("main_many", "main_dlopen")
 T8_BUNDLES = ("b_short", "b_long4095", "b_long4096")
@@ -162,6 +164,7 @@ def main() -> None:
     assert authored["build_guest.py"] == Path(__file__).read_bytes(), "builder differs from committed fixture source"
     assert authored["many_guest.py"] == Path(__file__).with_name("many_guest.py").read_bytes(), "generator differs from committed fixture source"
     assert authored["local_guest.py"] == Path(__file__).with_name("local_guest.py").read_bytes(), "self metadata helper differs from committed fixture source"
+    assert authored["alias_guest.py"] == Path(__file__).with_name("alias_guest.py").read_bytes(), "alias helper differs from committed fixture source"
     args.out.mkdir(mode=0o700)
     sources = args.out / "source/pr1170"
     guest_sources = args.out / "source/guest"
@@ -177,6 +180,7 @@ def main() -> None:
     obj = fixtures / "arm64" / "obj"
     cc = [str(args.clang), "-target", "arm64-apple-macos11", "-ffreestanding", "-nostdinc", "-O1", "-fno-stack-protector"]
     compile_guest(cc, guest_sources, obj)
+    compile_alias_sources(cc, obj, guest_sources, command)
     generated = args.out / "source/generated"
     many_library, many_main = generate(generated)
     for source, name in ((many_library, "libmany"), (many_main, "main_many"),
@@ -216,6 +220,11 @@ def main() -> None:
         patch_self(self_bundle, commands(self_bundle.read_bytes()))
         for name in T9_PROGRAMS:
             command([*link, "-e", "_main", "-o", str(real / name), str(obj / f"{name}.o"), str(obj / "libSystem.guest.dylib")])
+        aliases = real.parent / "aliases"
+        build_aliases(link, obj, aliases, command, commands)
+        for path in aliases.rglob("*"):
+            if path.is_file():
+                assert_encoding(path, variant)
         for directory in (real, empty):
             sdk_probe(directory / "main_multi", directory / "main_multi_oldsdk")
             for path in directory.iterdir():

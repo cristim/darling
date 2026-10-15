@@ -6,27 +6,38 @@ import struct
 from many_guest import import_details, uleb
 
 
-def exports(path: Path, load_commands: list[tuple[int, int, int]]) -> dict[str, int]:
-    data = path.read_bytes()
+def trie_location(data: bytes, load_commands: list[tuple[int, int, int]]) -> tuple[int, int, int]:
     tries = []
-    segments = []
     for kind, offset, size in load_commands:
         if kind == 0x80000033:
-            tries.append(struct.unpack_from("<II", data, offset + 8))
+            tries.append((*struct.unpack_from("<II", data, offset + 8), offset + 8))
         elif kind == 0x80000022:
             start, length = struct.unpack_from("<II", data, offset + 40)
             if length:
-                tries.append((start, length))
-        elif kind == 0x19:
-            assert size >= 72
-            address, length = struct.unpack_from("<QQ", data, offset + 24)
-            if length:
-                segments.append((address, address + length))
-    assert len(tries) == 1 and segments
-    start, length = tries[0]
+                tries.append((start, length, offset + 40))
+    assert len(tries) == 1
+    start, length, field = tries[0]
     assert length > 0 and start + length <= len(data)
-    trie = data[start:start + length]
+    return start, length, field
+
+
+def mapped_target(data: bytes, load_commands: list[tuple[int, int, int]], address: int) -> None:
+    segments = []
+    for kind, offset, size in load_commands:
+        if kind == 0x19:
+            assert size >= 72
+            start, length = struct.unpack_from("<QQ", data, offset + 24)
+            if length:
+                segments.append((start, start + length))
+    assert segments
     base = min(low for low, _ in segments)
+    assert any(low <= base + address < high for low, high in segments)
+
+
+def export_terminals(path: Path, load_commands: list[tuple[int, int, int]]) -> dict[str, bytes]:
+    data = path.read_bytes()
+    start, length, _ = trie_location(data, load_commands)
+    trie = data[start:start + length]
     stack = [(0, "", ())]
     result = {}
     visits = 0
@@ -39,12 +50,8 @@ def exports(path: Path, load_commands: list[tuple[int, int, int]]) -> dict[str, 
         terminal_end = offset + terminal_size
         assert terminal_end < len(trie)
         if terminal_size:
-            flags, cursor = uleb(trie, offset, terminal_end)
-            assert flags == 0, "expected a genuine local regular export"
-            address, cursor = uleb(trie, cursor, terminal_end)
-            assert cursor == terminal_end and prefix not in result
-            assert any(low <= base + address < high for low, high in segments)
-            result[prefix] = address
+            assert prefix not in result
+            result[prefix] = trie[offset:terminal_end]
         children = trie[terminal_end]
         offset = terminal_end + 1
         for _ in range(children):
@@ -53,6 +60,18 @@ def exports(path: Path, load_commands: list[tuple[int, int, int]]) -> dict[str, 
             assert edge
             child, offset = uleb(trie, end + 1, len(trie))
             stack.append((child, prefix + edge, (*ancestors, node)))
+    return result
+
+
+def exports(path: Path, load_commands: list[tuple[int, int, int]]) -> dict[str, int]:
+    result = {}
+    for name, terminal in export_terminals(path, load_commands).items():
+        flags, offset = uleb(terminal, 0, len(terminal))
+        assert flags == 0, "expected a genuine local regular export"
+        address, offset = uleb(terminal, offset, len(terminal))
+        assert offset == len(terminal)
+        mapped_target(path.read_bytes(), load_commands, address)
+        result[name] = address
     return result
 
 
