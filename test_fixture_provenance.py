@@ -12,10 +12,11 @@ from unittest.mock import patch
 
 import build_guest
 import run_guest
+from many_guest import NAMES
 
 
-GUEST_INPUTS = ("build_guest.py", "run_guest.py", "fx/libguest.c", "fx/main_multi_weak.c", "fx/main_objc.c")
-PROGRAMS = ("main_multi", "main_weak", "main_multi_weak", "main_objc", "main_multi_oldsdk", "libmst.dylib")
+GUEST_INPUTS = build_guest.GUEST_INPUTS
+PROGRAMS = ("main_multi", "main_weak", "main_multi_weak", "main_objc", "main_multi_oldsdk", "main_many", "main_dlopen", "libmst.dylib")
 
 
 class ExecutionReached(Exception):
@@ -54,11 +55,20 @@ def package(root: Path) -> tuple[Path, dict]:
                 path = result / "fixtures/arm64" / variant / lib / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(f"authored placeholder; never executable: {variant}/{lib}/{name}\n")
+        for name in ("b_short", "b_long4095", "b_long4096"):
+            path = result / "fixtures/arm64" / variant / "bundles" / f"{name}.bundle"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("authored non-executable bundle placeholder\n")
+    for name in ("libmany.c", "main_many.c"):
+        path = result / "source/generated" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("/* authored generated-source placeholder */\n")
     files = {str(path.relative_to(result)): hashlib.sha256(path.read_bytes()).hexdigest() for path in result.rglob("*") if path.is_file()}
     manifest = {"pr1170_repo": str(repo), "pr1170_sha": sha,
                 "inputs": {name: files[f"source/pr1170/{name}"] for name in build_guest.INPUTS},
                 "fixture_repo": str(repo), "fixture_sha": sha,
-                "fixture_inputs": {name: files[f"source/guest/{name}"] for name in GUEST_INPUTS}, "files": files}
+                "fixture_inputs": {name: files[f"source/guest/{name}"] for name in GUEST_INPUTS},
+                "many_imports": {variant: list(NAMES) for variant in ("opcode", "chained")}, "files": files}
     return result, manifest
 
 
@@ -66,7 +76,7 @@ def preflight(package_path: Path, manifest: dict, *, should_reach: bool) -> None
     (package_path / "manifest.json").write_text(json.dumps(manifest))
     arguments = ["run_guest.py", "--launcher", sys.executable, "--base-receipt", "/tmp/base-receipt", "--fix-receipt", "/tmp/fix-receipt", "--package", str(package_path)]
     reached = False
-    with patch.object(sys, "argv", arguments), patch.object(run_guest, "runtime_identity", return_value={}), patch.object(run_guest.fcntl, "flock", side_effect=ExecutionReached):
+    with patch.object(sys, "argv", arguments), patch.object(run_guest, "runtime_identity", return_value={}), patch.object(run_guest.fcntl, "flock", side_effect=ExecutionReached), patch.object(run_guest, "commands", return_value=[]), patch.object(run_guest, "import_order", return_value=list(NAMES)):
         try:
             run_guest.main()
         except ExecutionReached:
@@ -82,7 +92,8 @@ def test_empty_and_partial_files(root: Path) -> None:
     invalid = copy.deepcopy(original)
     invalid["files"] = {}
     preflight(output, invalid, should_reach=False)
-    for required in ("fixtures/arm64/opcode/empty/main_multi", "fixtures/arm64/chained/real/libmst.dylib", "source/guest/fx/main_objc.c"):
+    for required in ("fixtures/arm64/opcode/empty/main_multi", "fixtures/arm64/chained/real/libmst.dylib", "source/guest/fx/main_objc.c",
+                     "fixtures/arm64/chained/empty/main_many", "fixtures/arm64/opcode/bundles/b_long4095.bundle"):
         invalid = copy.deepcopy(original)
         del invalid["files"][required]
         preflight(output, invalid, should_reach=False)

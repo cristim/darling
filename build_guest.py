@@ -17,13 +17,18 @@ import shutil
 import struct
 import subprocess
 
+from many_guest import generate, import_order
+
 
 INPUTS = (
     "build.sh", "main_func.c", "main_data.c", "main_multi.c", "main_weak.c",
     "libmstreal.c", "libmstempty.c", "sysstub.c",
 )
-GUEST_INPUTS = ("build_guest.py", "run_guest.py", "fx/libguest.c", "fx/main_multi_weak.c", "fx/main_objc.c")
+GUEST_INPUTS = ("build_guest.py", "run_guest.py", "many_guest.py", "fx/libguest.c", "fx/main_multi_weak.c", "fx/main_objc.c",
+                "fx/main_dlopen.c", "fx/sysstub.c", "fx/bundle.c")
 CORE_PROGRAMS = ("main_multi", "main_weak", "main_multi_weak", "main_objc", "main_multi_oldsdk")
+T8_PROGRAMS = ("main_many", "main_dlopen")
+T8_BUNDLES = ("b_short", "b_long4095", "b_long4096")
 
 
 def command(argv: list[str], *, env: dict[str, str] | None = None) -> bytes:
@@ -151,6 +156,7 @@ def main() -> None:
     inherited = committed_inputs(args.pr1170_repo, args.pr1170_sha, INPUTS, "tests/mst/")
     authored = committed_inputs(args.fixture_repo, args.fixture_sha, GUEST_INPUTS)
     assert authored["build_guest.py"] == Path(__file__).read_bytes(), "builder differs from committed fixture source"
+    assert authored["many_guest.py"] == Path(__file__).with_name("many_guest.py").read_bytes(), "generator differs from committed fixture source"
     args.out.mkdir(mode=0o700)
     sources = args.out / "source/pr1170"
     guest_sources = args.out / "source/guest"
@@ -166,17 +172,36 @@ def main() -> None:
     obj = fixtures / "arm64" / "obj"
     cc = [str(args.clang), "-target", "arm64-apple-macos11", "-ffreestanding", "-nostdinc", "-O1", "-fno-stack-protector"]
     compile_guest(cc, guest_sources, obj)
+    generated = args.out / "source/generated"
+    many_library, many_main = generate(generated)
+    for source, name in ((many_library, "libmany"), (many_main, "main_many"),
+                         (guest_sources / "fx/main_dlopen.c", "main_dlopen"),
+                         (guest_sources / "fx/sysstub.c", "guest_sysstub")):
+        command([*cc, "-c", str(source), "-o", str(obj / f"{name}.o")])
+    command([str(args.ld), "-arch", "arm64", "-dylib", "-platform_version", "macos", "11.0", "11.0",
+             "-install_name", "/usr/lib/libSystem.B.dylib", "-compatibility_version", "1",
+             "-o", str(obj / "libSystem.guest.dylib"), str(obj / "guest_sysstub.o")])
+    many_imports = {}
     for variant in ("opcode", "chained"):
         flags = ["-fixup_chains"] if variant == "chained" else []
         link = [str(args.ld), "-arch", "arm64", "-platform_version", "macos", "11.0", "11.0", *flags]
         real = fixtures / "arm64" / variant / "real"
         empty = real.with_name("empty")
         library = real / "libmst.dylib"
-        command([*link, "-dylib", "-install_name", "@executable_path/libmst.dylib", "-o", str(library), str(obj / "libmstreal.o"), str(obj / "libguest.o")])
-        for name in ("main_multi_weak", "main_objc"):
-            command([*link, "-e", "_main", "-o", str(real / name), str(obj / f"{name}.o"), str(library), str(obj / "libSystem.B.dylib")])
+        command([*link, "-dylib", "-install_name", "@executable_path/libmst.dylib", "-o", str(library), str(obj / "libmstreal.o"), str(obj / "libguest.o"), str(obj / "libmany.o")])
+        for name in ("main_multi_weak", "main_objc", *T8_PROGRAMS):
+            command([*link, "-e", "_main", "-o", str(real / name), str(obj / f"{name}.o"), str(library), str(obj / "libSystem.guest.dylib")])
             shutil.copyfile(real / name, empty / name)
             (empty / name).chmod(0o700)
+        many_imports[variant] = import_order(real / "main_many", commands((real / "main_many").read_bytes()))
+        bundles = real.parent / "bundles"
+        bundles.mkdir()
+        for name, symbol in (("b_short", "_mst_flat_missing"), ("b_long4095", "_" + "A" * 4094),
+                             ("b_long4096", "_" + "A" * 4095)):
+            command([*cc, "-c", str(guest_sources / "fx/bundle.c"), f"-DMST_NAME={symbol}", "-o", str(obj / f"{name}.o")])
+            bundle = bundles / f"{name}.bundle"
+            command([*link, "-bundle", "-undefined", "dynamic_lookup", "-o", str(bundle), str(obj / f"{name}.o")])
+            assert_encoding(bundle, variant)
         for directory in (real, empty):
             sdk_probe(directory / "main_multi", directory / "main_multi_oldsdk")
             for path in directory.iterdir():
@@ -188,7 +213,7 @@ def main() -> None:
              for path in args.out.rglob("*") if path.is_file()}
     manifest = {"pr1170_repo": str(args.pr1170_repo), "pr1170_sha": args.pr1170_sha, "inputs": provenance,
                 "fixture_repo": str(args.fixture_repo), "fixture_sha": args.fixture_sha,
-                "fixture_inputs": guest_provenance, "files": files}
+                "fixture_inputs": guest_provenance, "many_imports": many_imports, "files": files}
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 

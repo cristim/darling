@@ -17,11 +17,13 @@ import stat
 import subprocess
 import tempfile
 
-from build_guest import CORE_PROGRAMS, GUEST_INPUTS, INPUTS, absolute, committed_inputs
+from build_guest import CORE_PROGRAMS, GUEST_INPUTS, INPUTS, T8_BUNDLES, T8_PROGRAMS, absolute, commands, committed_inputs
+from many_guest import NAMES, import_order
 
 
 GUEST_ROOT = "/Volumes/SystemRoot"
 SKIP_DIAGNOSTIC = b"dyld: missing-symbol trace: image scan skipped, the main executable does not require strict Mach-O loading (built for an SDK before macOS 10.15)\n"
+BUDGET_DIAGNOSTIC = b"dyld: missing-symbol trace: scan work budget exhausted, the trace is incomplete\n"
 
 
 def digest(path: Path) -> str:
@@ -58,11 +60,13 @@ def runtime_identity(receipt: Path, launcher: Path) -> dict:
 
 def fixture_identity(package: Path) -> dict:
     manifest = json.loads((package / "manifest.json").read_text())
-    assert set(manifest) == {"pr1170_repo", "pr1170_sha", "inputs", "fixture_repo", "fixture_sha", "fixture_inputs", "files"}
+    assert set(manifest) == {"pr1170_repo", "pr1170_sha", "inputs", "fixture_repo", "fixture_sha", "fixture_inputs", "many_imports", "files"}
     files = manifest["files"]
     assert type(files) is dict
     required = {f"fixtures/arm64/{variant}/{lib}/{name}" for variant in ("opcode", "chained")
-                for lib in ("real", "empty") for name in (*CORE_PROGRAMS, "libmst.dylib")}
+                for lib in ("real", "empty") for name in (*CORE_PROGRAMS, *T8_PROGRAMS, "libmst.dylib")}
+    required.update(f"fixtures/arm64/{variant}/bundles/{name}.bundle" for variant in ("opcode", "chained") for name in T8_BUNDLES)
+    required.update(("source/generated/libmany.c", "source/generated/main_many.c"))
     required.update(f"source/pr1170/{name}" for name in INPUTS)
     required.update(f"source/guest/{name}" for name in GUEST_INPUTS)
     assert required <= files.keys(), "manifest omits required core artifact/source"
@@ -84,8 +88,14 @@ def fixture_identity(package: Path) -> dict:
         for name, data in inputs.items():
             assert type(hashes[name]) is str and re.fullmatch(r"[0-9a-f]{64}", hashes[name])
             assert hashlib.sha256(data).hexdigest() == hashes[name] == files[f"source/{source}/{name}"]
-    for name in ("build_guest.py", "run_guest.py"):
+    for name in ("build_guest.py", "run_guest.py", "many_guest.py"):
         assert digest(Path(__file__).with_name(name)) == manifest["fixture_inputs"][name], f"live {name} differs from committed fixture input"
+    assert type(manifest["many_imports"]) is dict and set(manifest["many_imports"]) == {"opcode", "chained"}
+    for variant, expected in manifest["many_imports"].items():
+        assert type(expected) is list and all(type(name) is str for name in expected)
+        for lib in ("real", "empty"):
+            executable = package / f"fixtures/arm64/{variant}/{lib}/main_many"
+            assert import_order(executable, commands(executable.read_bytes())) == expected
     return manifest
 
 
@@ -124,8 +134,9 @@ class Prefix:
         if process.returncode != 0:
             raise RuntimeError(f"shutdown failed or exceeded deadline; prefix retained: {self.prefix}; receipts: {path}")
 
-    def guest(self, tag: str, program: str, variables: list[str], deadline: int = 120) -> tuple[int, bytes, bytes]:
-        process, path = self.launch(tag, ["shell", "/usr/bin/env", *variables, program], deadline)
+    def guest(self, tag: str, program: str, variables: list[str], deadline: int = 120,
+              program_arguments: tuple[str, ...] = ()) -> tuple[int, bytes, bytes]:
+        process, path = self.launch(tag, ["shell", "/usr/bin/env", *variables, program, *program_arguments], deadline)
         if process.returncode is None:
             shutdown_error = None
             try:
@@ -232,6 +243,74 @@ def run_core(prefix: Prefix, package: Path, label: str) -> dict[str, tuple[int, 
     return results
 
 
+def assert_repeat_cap(records: list[dict], raw: bytes, symbol: str, bundle: Path, *, byte_cap: bool) -> None:
+    assert records[-1] == {"v": 1, "kind": "truncated"}
+    missing = {"v": 1, "kind": "missing", "sym": symbol, "lib": "flat namespace",
+               "from": GUEST_ROOT + str(bundle), "arch": "arm64"}
+    count = len(records) - 1
+    assert count > 0 and all(record == missing for record in records[:-1])
+    if byte_cap:
+        assert count < 4096
+        final = b'{"v":1,"kind":"truncated"}\n'
+        # MissingSymbolTrace.cpp reserves scan_skipped plus final, including newlines.
+        reserve = len(b'{"v":1,"kind":"scan_skipped"}\n') + len(final)
+        row_size = len(raw.splitlines(keepends=True)[0])
+        assert raw.endswith(final) and len(raw) <= 16 * 1024 * 1024
+        assert len(raw) == count * row_size + len(final)
+        assert count == (16 * 1024 * 1024 - reserve) // row_size
+    else:
+        assert count == 4096
+
+
+def run_t8(prefix: Prefix, package: Path, label: str, manifest: dict) -> dict[str, tuple[int, bytes, bytes]]:
+    results = {}
+    for variant in ("opcode", "chained"):
+        fixtures = package / "fixtures/arm64" / variant
+        cases = [("many-control", fixtures / "real/main_many", (), None),
+                 ("many-missing", fixtures / "empty/main_many", (), None)]
+        cases.extend((name, fixtures / "real/main_dlopen", (GUEST_ROOT + str(fixtures / "bundles" / f"{name}.bundle"),
+                      "1" if name == "b_long4096" else "5000"), fixtures / "bundles" / f"{name}.bundle") for name in T8_BUNDLES)
+        for name, executable, arguments, bundle in cases:
+            for on in (False, True) if label == "fix" else (False,):
+                tag = f"t8-{variant}-{name}-{'on' if on else 'off'}"
+                logs = prefix.root / f"logs-{tag}"
+                logs.mkdir(mode=0o700)
+                variables = [f"DARLING_MISSING_SYMBOLS_LOG={GUEST_ROOT}{logs}"]
+                if on:
+                    variables.append("DARLING_MISSING_SYMBOLS=log")
+                result = prefix.guest(tag, GUEST_ROOT + str(executable), variables, deadline=600, program_arguments=arguments)
+                results[tag] = result
+                if name == "many-control":
+                    assert result == (23, b"", b""), (tag, result)
+                elif name == "many-missing":
+                    assert result[0] not in (0, 124, 127) and not result[1]
+                    trigger = re.findall(rb"Symbol not found: (_mst_many_[0-9]{4})\b", result[2])
+                    assert len(trigger) == 1 and trigger[0].decode() in NAMES, (tag, result)
+                else:
+                    assert result[:2] == (0, b"all-failed\n"), (tag, result)
+                records = read_records(logs, executable.name, absent=not on or name == "many-control")
+                if not on or name == "many-control":
+                    continue
+                off = results[tag.removesuffix("on") + "off"]
+                if name == "many-missing":
+                    assert result == off
+                    assert len(records) == 4097 and records[-1] == {"v": 1, "kind": "truncated"}
+                    ordered = dict.fromkeys([trigger[0].decode(), *manifest["many_imports"][variant]])
+                    assert_missing(records[:-1], set(list(ordered)[:4096]), executable)
+                elif name == "b_long4096":
+                    assert records == [{"v": 1, "kind": "truncated", "lib": "flat namespace",
+                                        "from": GUEST_ROOT + str(bundle), "arch": "arm64"},
+                                       {"v": 1, "kind": "truncated", "reason": "scan_budget"}]
+                    assert result[2].count(BUDGET_DIAGNOSTIC) == 1
+                    assert (result[0], result[1], result[2].replace(BUDGET_DIAGNOSTIC, b"", 1)) == off
+                else:
+                    assert result == off
+                    raw = next(logs.iterdir()).read_bytes()
+                    symbol = "_mst_flat_missing" if name == "b_short" else "_" + "A" * 4094
+                    assert_repeat_cap(records, raw, symbol, bundle, byte_cap=name == "b_long4095")
+    return results
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher", type=absolute, required=True)
@@ -255,11 +334,12 @@ def main() -> None:
             prefix = Prefix(args.launcher, identities[label], root, label)
             try:
                 results[label] = run_core(prefix, args.package, label)
+                results[label].update(run_t8(prefix, args.package, label, manifest))
             finally:
                 prefix.stop()
         for tag, baseline in results["base"].items():
             assert results["fix"][tag] == baseline, f"default-off differs from base: {tag}"
-        print("PASS core t3/t5 and SDK-field gate; shutdown complete")
+        print("PASS core t3/t5, SDK-field gate and t8 caps; shutdown complete")
 
 
 if __name__ == "__main__":
