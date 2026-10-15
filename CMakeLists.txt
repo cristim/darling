@@ -236,7 +236,12 @@ InstallSymlink(/Volumes/SystemRoot/usr/share/zoneinfo ${CMAKE_INSTALL_PREFIX}/li
 install(DIRECTORY DESTINATION libexec/darling/Library/Preferences)
 
 if(NOT DEBIAN_PACKAGING)
-	install(CODE "execute_process(COMMAND bash ${DARLING_TOP_DIRECTORY}/tools/shutdown-user.sh)")
+	install(CODE "
+		execute_process(COMMAND bash \"${DARLING_TOP_DIRECTORY}/tools/shutdown-user.sh\" RESULT_VARIABLE DARLING_SHUTDOWN_RESULT)
+		if(NOT DARLING_SHUTDOWN_RESULT STREQUAL \"0\")
+			message(FATAL_ERROR \"Unable to stop old Darling containers; installation stopped\")
+		endif()
+	")
 endif(NOT DEBIAN_PACKAGING)
 
 add_custom_target(uninstall
