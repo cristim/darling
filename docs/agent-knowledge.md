@@ -25,7 +25,7 @@ belongs in each agent's own scratch `STATUS.md`.
 
 - **Which binaries these tools may touch** (`AGENTS.md` section 1, "Binaries you may point tools
   at"): `nm`, `objdump`, `strings` and debuggers on our own build output only. On guest app
-  binaries, only `nm` and `otool -L`, for demand analysis (ladder rung 5). Nothing on a binary from
+  binaries, only `nm -u` (or `llvm-nm -u -m`) and `otool -L`, for demand analysis (ladder rung 5). Nothing on a binary from
   a macOS install.
 - **`ninja` can report "no work to do" on a stale binary (unverified, seen once)** when a header
   change did not invalidate what it should. `touch` the source file to force the relink.
