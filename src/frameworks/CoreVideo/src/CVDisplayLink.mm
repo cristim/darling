@@ -831,9 +831,12 @@ static void *displayClockThread(void *) {
         if(result<0) return NULL;
         dispatchTimerFire(NULL);
         struct { long sec, nsec; } now;
-        if(__lolsys_syscall(1,(long)&now,0,0,0,0,228)==0 &&
-           (now.sec>deadline.sec || (now.sec==deadline.sec && (uint64_t)(now.nsec-deadline.nsec)>cvIntervalNS))) {
-            deadline.sec=now.sec;deadline.nsec=now.nsec;
+        if(__lolsys_syscall(1,(long)&now,0,0,0,0,228)==0) {
+            long long diffNS = ((long long)now.sec - (long long)deadline.sec) * 1000000000LL + (now.nsec - deadline.nsec);
+            if (diffNS > (long long)cvIntervalNS) {
+                deadline.sec = now.sec;
+                deadline.nsec = now.nsec;
+            }
         }
     }
 }
