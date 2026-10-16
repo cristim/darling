@@ -103,20 +103,11 @@ static void *asyncPresentWorker(void *opaque) {
         /* Native VSync owns the refresh cadence; avoid a second clock that
          * can miss the compositor's next refresh after a variable swap wait. */
         if(nativeVSync)continue;
-        /* darling-lol perf: use dynamic refresh interval from RCLOL_REFRESH_HZ
-         * or default to uncapped (1ms minimum interval) when VSync is off. */
-        static uint64_t refreshNS = 0;
-        if (!refreshNS) {
-            const char *hz = getenv("RCLOL_REFRESH_HZ");
-            int rate = hz ? atoi(hz) : 0;
-            refreshNS = (rate > 0 && rate <= 1000) ? 1000000000ull / (uint64_t)rate : 1000000ull;
-            if (refreshNS < 1000000ull) refreshNS = 1000000ull;
-        }
-        deadline += refreshNS;
+        deadline+=16666667ull;
         uint64_t now=nativeMonotonicNS();
         /* Preserve the refresh phase across small scheduling delays. Reset only
          * after a full missed period, so lateness does not accumulate as drift. */
-        if(now>deadline && now-deadline>refreshNS){__atomic_fetch_add(&target->reserved[2],1,__ATOMIC_RELAXED);deadline=now;}
+        if(now>deadline && now-deadline>16666667ull){__atomic_fetch_add(&target->reserved[2],1,__ATOMIC_RELAXED);deadline=now;}
         nativeWaitUntil(deadline);
     }
     if(fbo)glDeleteFramebuffers(1,&fbo);

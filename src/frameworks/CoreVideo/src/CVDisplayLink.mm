@@ -817,26 +817,17 @@ static void dispatchTimerFire(void* /*info*/) {
 static void *displayClockThread(void *) {
     struct { long sec, nsec; } deadline;
     if (__lolsys_syscall(1,(long)&deadline,0,0,0,0,228)<0) return NULL;
-    static uint64_t cvIntervalNS = 0;
-    if (!cvIntervalNS) {
-        const char *hz = getenv("RCLOL_REFRESH_HZ");
-        int rate = hz ? atoi(hz) : 0;
-        cvIntervalNS = (rate > 0 && rate <= 1000) ? 1000000000ull / (uint64_t)rate : (1000000000ull / 144ull);
-    }
     for (;;) {
-        deadline.nsec += cvIntervalNS;
+        deadline.nsec += NSEC_PER_SEC / 60;
         if(deadline.nsec>=NSEC_PER_SEC){deadline.nsec-=NSEC_PER_SEC;++deadline.sec;}
         long result;
         do { result=__lolsys_syscall(1,1,(long)&deadline,0,0,0,230); } while(result==-4);
         if(result<0) return NULL;
         dispatchTimerFire(NULL);
         struct { long sec, nsec; } now;
-        if(__lolsys_syscall(1,(long)&now,0,0,0,0,228)==0) {
-            long long diffNS = ((long long)now.sec - (long long)deadline.sec) * 1000000000LL + (now.nsec - deadline.nsec);
-            if (diffNS > (long long)cvIntervalNS) {
-                deadline.sec = now.sec;
-                deadline.nsec = now.nsec;
-            }
+        if(__lolsys_syscall(1,(long)&now,0,0,0,0,228)==0 &&
+           (now.sec>deadline.sec || (now.sec==deadline.sec && now.nsec-deadline.nsec>NSEC_PER_SEC/60))) {
+            deadline.sec=now.sec;deadline.nsec=now.nsec;
         }
     }
 }
