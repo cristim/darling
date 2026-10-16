@@ -1,6 +1,19 @@
 /* Bounded GPU-only staging: the producer never waits for display cadence.
  * Three textures cover the currently displayed, pending, and writing frames.
  * GPU fences order both the completed producer copy and subsequent reuse. */
+
+/* darling-lol: software refresh period for the paced paths, from RCLOL_REFRESH_HZ
+ * (1-1000 Hz). Unset or out of range keeps the previous 60 Hz period. */
+static uint64_t nativeRefreshIntervalNS(void){
+    static uint64_t interval;
+    if(!interval){
+        const char *hz=getenv("RCLOL_REFRESH_HZ");
+        long rate=hz?strtol(hz,NULL,10):0;
+        interval=(rate>0&&rate<=1000)?1000000000ull/(uint64_t)rate:16666667ull;
+    }
+    return interval;
+}
+
 struct DarlingAsyncPresent {
     CGLContextObj owner;
     pthread_mutex_t mutex;
@@ -103,11 +116,12 @@ static void *asyncPresentWorker(void *opaque) {
         /* Native VSync owns the refresh cadence; avoid a second clock that
          * can miss the compositor's next refresh after a variable swap wait. */
         if(nativeVSync)continue;
-        deadline+=16666667ull;
+        uint64_t refreshNS=nativeRefreshIntervalNS();
+        deadline += refreshNS;
         uint64_t now=nativeMonotonicNS();
         /* Preserve the refresh phase across small scheduling delays. Reset only
          * after a full missed period, so lateness does not accumulate as drift. */
-        if(now>deadline && now-deadline>16666667ull){__atomic_fetch_add(&target->reserved[2],1,__ATOMIC_RELAXED);deadline=now;}
+        if(now>deadline && now-deadline>refreshNS){__atomic_fetch_add(&target->reserved[2],1,__ATOMIC_RELAXED);deadline=now;}
         nativeWaitUntil(deadline);
     }
     if(fbo)glDeleteFramebuffers(1,&fbo);

@@ -825,12 +825,13 @@ CGL_EXPORT int CGLPresentIOSurface(IOSurfaceRef surface) {
         if(__lolsys_syscall(1,(long)&now,0,0,0,0,228)==0){
             uint64_t current=(uint64_t)now.tv_sec*1000000000ull+now.tv_nsec;
             uint64_t deadline=ctx->native_next_present_ns;
-            if(!deadline || (current>deadline && current-deadline>16666667ull))deadline=current;
+            uint64_t paceNS=nativeRefreshIntervalNS();
+            if(!deadline || (current>deadline && current-deadline>paceNS))deadline=current;
             if(deadline>current){
                 struct timespec wake={deadline/1000000000ull,deadline%1000000000ull};
                 while(__lolsys_syscall(1,1,(long)&wake,0,0,0,230)==-4){}
             }
-            ctx->native_next_present_ns=deadline+16666667ull;
+            ctx->native_next_present_ns=deadline+paceNS;
         }
     }
     if(getenv("RCLOL_GPU_DIRECT_ASYNC")){int queued=enqueueAsyncPresent(ctx,binding.texture,binding.target,width,height);if(!queued){stopAsyncPresent(ctx);__atomic_store_n(&target->ready,0,__ATOMIC_RELEASE);}CGLReleaseContext(ctx);return queued;}
