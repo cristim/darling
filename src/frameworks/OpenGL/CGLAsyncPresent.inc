@@ -109,7 +109,8 @@ static void *asyncPresentWorker(void *opaque) {
         if (!refreshNS) {
             const char *hz = getenv("RCLOL_REFRESH_HZ");
             int rate = hz ? atoi(hz) : 0;
-            refreshNS = rate > 0 ? 1000000000ull / (uint64_t)rate : 1000000ull;
+            refreshNS = (rate > 0 && rate <= 1000) ? 1000000000ull / (uint64_t)rate : 1000000ull;
+            if (refreshNS < 1000000ull) refreshNS = 1000000ull;
         }
         deadline += refreshNS;
         uint64_t now=nativeMonotonicNS();

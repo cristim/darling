@@ -826,7 +826,7 @@ CGL_EXPORT int CGLPresentIOSurface(IOSurfaceRef surface) {
             uint64_t current=(uint64_t)now.tv_sec*1000000000ull+now.tv_nsec;
             uint64_t deadline=ctx->native_next_present_ns;
             static uint64_t paceNS = 0;
-            if (!paceNS) { const char *hz = getenv("RCLOL_REFRESH_HZ"); int r = hz ? atoi(hz) : 0; paceNS = r > 0 ? 1000000000ull / (uint64_t)r : 1000000ull; }
+            if (!paceNS) { const char *hz = getenv("RCLOL_REFRESH_HZ"); int r = hz ? atoi(hz) : 0; paceNS = (r > 0 && r <= 1000) ? 1000000000ull / (uint64_t)r : 1000000ull; if (paceNS < 1000000ull) paceNS = 1000000ull; }
             if(!deadline || (current>deadline && current-deadline>paceNS))deadline=current;
             if(deadline>current){
                 struct timespec wake={deadline/1000000000ull,deadline%1000000000ull};
