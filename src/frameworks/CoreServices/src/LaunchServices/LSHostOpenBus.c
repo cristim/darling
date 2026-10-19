@@ -3,6 +3,9 @@ This file is part of Darling.
 
 Copyright (C) 2026 Darling developers
 
+Based on work by lucannez64 (public repository lucannez64/darling-lol,
+commit 8f62017), GPL-3.0.
+
 Darling is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
