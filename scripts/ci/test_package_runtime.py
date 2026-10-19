@@ -77,6 +77,17 @@ class Merge(unittest.TestCase):
         self.assertIn("source SHA", done.stderr)
         self.assertFalse(out.exists())
 
+    def test_lock_sharing_only_the_sha7_prefix_is_rejected(self):
+        # The release tag carries only the first 7 characters, so a prefix match must not pass.
+        dirs = [self.arch_dir("aarch64"), self.arch_dir("x86_64")]
+        for directory in dirs:
+            lookalike = {"repos": [dict(LOCK_TOP["repos"][0], base="a" * 7 + "b" * 33)]}
+            (directory / "refs.lock.json").write_text(json.dumps(lookalike))
+        done, out = self.merge(dirs)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("source SHA", done.stderr)
+        self.assertFalse(out.exists())
+
     def test_extra_tarball_is_rejected(self):
         d = self.arch_dir("aarch64")
         (d / "evil.tar.zst").write_bytes(b"x")
