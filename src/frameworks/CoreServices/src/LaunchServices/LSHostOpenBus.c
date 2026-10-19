@@ -45,12 +45,13 @@ int _LSHostOpenSchemeSupported(const char* url)
 	return 0;
 }
 
-/* RFC 3986 reserved and unreserved characters; '%' is checked separately. */
+/* RFC 3986 reserved and unreserved characters except '$' and the single quote, which a shell
+   script such as xdg-open may interpret; '%' is checked separately. */
 static int url_char_allowed(unsigned char c)
 {
 	if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
 		return 1;
-	return c != '\0' && strchr("-._~:/?#[]@!$&'()*+,;=", c) != NULL;
+	return c != '\0' && strchr("-._~:/?#[]@!&()*+,;=", c) != NULL;
 }
 
 static int hex_digit(unsigned char c)

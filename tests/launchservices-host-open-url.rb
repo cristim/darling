@@ -17,7 +17,7 @@ Dir.mktmpdir('ls-url-') do |dir|
     int main(void) {
       ok("https://example.org/");
       ok("HTTP://example.org:8080/a/b?x=1&y=%20z#frag");
-      ok("https://user@example.org/p;q=(r)*+,!$'~-._[x]");
+      ok("https://user@example.org/p;q=(r)*+,!~-._[x]");
       ok("mailto:someone@example.org");
       ok("mailto:someone@example.org?subject=Hi%20there&body=line%0Aline");
       ok("mailto:a@example.org?attacher=1");      /* a different parameter name */
@@ -28,6 +28,9 @@ Dir.mktmpdir('ls-url-') do |dir|
       bad("https://e.org/a b"); bad("https://e.org/a b --new-window"); bad("https://e.org/a\tb");
       bad("https://e.org/a\nb"); bad("https://e.org/a\rb"); bad("https://e.org/\x01"); bad("https://e.org/\x7f");
       bad("https://e.org/\""); bad("https://e.org/<x>"); bad("https://e.org/\\x"); bad("https://e.org/^"); bad("https://e.org/`x`");
+      /* xdg-open is a shell script: no '$' and no single quote */
+      bad("https://e.org/$(id)"); bad("https://e.org/a$b"); bad("https://e.org/'x'"); bad("mailto:a@e.org?subject=it's");
+      ok("https://e.org/%24%27");
       bad("https://e.org/{x}"); bad("https://e.org/|x"); bad("https://e.org/\xc3\xa9"); bad("https://e.org/\xff");
       bad("https://e.org/%"); bad("https://e.org/%4"); bad("https://e.org/%zz"); bad("mailto:a@e.org?subject=a b");
       /* mailto options that attach a host file */
