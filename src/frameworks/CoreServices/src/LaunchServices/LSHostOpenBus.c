@@ -186,7 +186,9 @@ static int open_session_bus(const struct ls_host_api* api, void** ret)
 
 	if (env != NULL && env[0] != '\0')
 	{
-		if (strlen(env) >= sizeof(address))
+		/* sd-bus also accepts "unixexec:path=...", which runs a host program, so only a plain
+		   unix socket address is taken from the environment. */
+		if (strlen(env) >= sizeof(address) || strncmp(env, "unix:", 5) != 0)
 			return -LS_HOST_LINUX_EINVAL;
 		strcpy(address, env);
 	}
