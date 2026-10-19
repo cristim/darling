@@ -217,20 +217,24 @@ static int open_session_bus(const struct ls_host_api* api, void** ret)
 	return 0;
 }
 
-static int call(const struct ls_host_api* api, void* bus, void* m)
+/* Copies the D-Bus error name of a failed call (empty if the failure had none) to "name". */
+static int call(const struct ls_host_api* api, void* bus, void* m, char* name, size_t name_size)
 {
 	struct ls_host_bus_error error = { NULL, NULL, 0 };
 	void* reply = NULL;
 	uint64_t timeout = api->timeout_usec ? api->timeout_usec : DEFAULT_TIMEOUT_USEC;
 	int r = api->sd_bus_call(bus, m, timeout, &error, &reply);
 
+	if (name != NULL && name_size > 0)
+		snprintf(name, name_size, "%s", error.name != NULL ? error.name : "");
 	if (reply != NULL)
 		api->sd_bus_message_unref(reply);
 	api->sd_bus_error_free(&error);
 	return r < 0 ? r : 0;
 }
 
-static int open_via_portal(const struct ls_host_api* api, void* bus, const char* url)
+static int open_via_portal(const struct ls_host_api* api, void* bus, const char* url, char* error_name,
+	size_t error_name_size)
 {
 	void* m = NULL;
 	int r = api->sd_bus_message_new_method_call(bus, &m, "org.freedesktop.portal.Desktop",
@@ -242,7 +246,7 @@ static int open_via_portal(const struct ls_host_api* api, void* bus, const char*
 	if (r >= 0)
 		r = api->sd_bus_message_append(m, "a{sv}", 0);
 	if (r >= 0)
-		r = call(api, bus, m);
+		r = call(api, bus, m, error_name, error_name_size);
 	api->sd_bus_message_unref(m);
 	return r;
 }
@@ -325,14 +329,22 @@ static int open_via_systemd(const struct ls_host_api* api, void* bus, const char
 	if (r >= 0)
 		r = api->sd_bus_message_append(m, "a(sa(sv))", 0);
 	if (r >= 0)
-		r = call(api, bus, m);
+		r = call(api, bus, m, NULL, 0);
 	api->sd_bus_message_unref(m);
 	return r;
+}
+
+/* True when the portal is simply not there; a denial or any other failure must not be bypassed. */
+static int portal_unavailable(const char* error_name)
+{
+	return strcmp(error_name, "org.freedesktop.DBus.Error.ServiceUnknown") == 0
+		|| strcmp(error_name, "org.freedesktop.DBus.Error.NameHasNoOwner") == 0;
 }
 
 int _LSHostOpenURL(const struct ls_host_api* api, const char* url, int* method)
 {
 	void* bus = NULL;
+	char error_name[128] = "";
 	int r;
 
 	r = _LSHostOpenValidateURL(url);
@@ -345,14 +357,14 @@ int _LSHostOpenURL(const struct ls_host_api* api, const char* url, int* method)
 	if (r < 0)
 		return r;
 
-	r = open_via_portal(api, bus, url);
+	r = open_via_portal(api, bus, url, error_name, sizeof(error_name));
 	if (r >= 0)
 	{
 		if (method)
 			*method = LS_HOST_OPEN_VIA_PORTAL;
 	}
-	/* A portal that timed out may still open the URL; don't open it twice. */
-	else if (r != -LS_HOST_LINUX_ETIMEDOUT)
+	/* A timed-out portal may still open the URL, and a denial is a decision: neither is retried. */
+	else if (r != -LS_HOST_LINUX_ETIMEDOUT && portal_unavailable(error_name))
 	{
 		r = open_via_systemd(api, bus, url);
 		if (r >= 0 && method)
