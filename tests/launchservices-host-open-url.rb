@@ -23,7 +23,7 @@ Dir.mktmpdir('ls-url-') do |dir|
       ok("mailto:a@example.org?attacher=1");      /* a different parameter name */
       /* scheme allowlist */
       bad(""); bad("file:///etc/passwd"); bad("javascript:alert(1)"); bad("httpx://e.org"); bad(" https://e.org");
-      bad("ftp://e.org/"); bad("-https://e.org"); bad("--new-window"); bad("http:foo"); bad("https:"); bad("http:///x");
+      bad("ftp://e.org/"); bad("file://localhost/etc/passwd"); bad("-https://e.org"); bad("--new-window"); bad("http:foo"); bad("https:"); bad("http:///x");
       /* characters that are never legal in a URL */
       bad("https://e.org/a b"); bad("https://e.org/a b --new-window"); bad("https://e.org/a\tb");
       bad("https://e.org/a\nb"); bad("https://e.org/a\rb"); bad("https://e.org/\x01"); bad("https://e.org/\x7f");
