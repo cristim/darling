@@ -367,8 +367,9 @@ int _LSHostOpenURL(const struct ls_host_api* api, const char* url, int* method)
 		if (method)
 			*method = LS_HOST_OPEN_VIA_PORTAL;
 	}
-	/* A timed-out portal may still open the URL, and a denial is a decision: neither is retried. */
-	else if (r != -LS_HOST_LINUX_ETIMEDOUT && portal_unavailable(error_name))
+	/* Only an absent portal is bypassed: a timed-out one may still open the URL and a denial is a
+	   decision, so neither is retried. */
+	else if (portal_unavailable(error_name))
 	{
 		r = open_via_systemd(api, bus, url);
 		if (r >= 0 && method)
