@@ -33,7 +33,7 @@ class Merge(unittest.TestCase):
     def merge(self, dirs):
         out = self.root / "manifest.json"
         cmd = [sys.executable, str(PACKAGER), "merge", "--version", "v1", "--repo", "VibeDarling/darling",
-               "--sha", "b" * 40, "--published-at", "now", "--recipe-sha", "r", "--source-ref", "refs/heads/master",
+               "--sha", "a" * 40, "--published-at", "now", "--recipe-sha", "r", "--source-ref", "refs/heads/master",
                "--out", str(out), "--fragments", *[str(d / f"fragment-{d.name.removeprefix('runtime-')}.json") for d in dirs],
                "--lock-dirs", *map(str, dirs)]
         return subprocess.run(cmd, capture_output=True, text=True), out
@@ -51,6 +51,42 @@ class Merge(unittest.TestCase):
         done, _ = self.merge([self.arch_dir("aarch64", lie=True)])
         self.assertNotEqual(done.returncode, 0)
         self.assertIn("does not match its fragment sha256", done.stderr)
+
+    def test_top_lock_source_identity_is_required_in_each_architecture(self):
+        for arch in ("aarch64", "x86_64"):
+            for entries in ([], [dict(LOCK_TOP["repos"][0], base="b" * 40)],
+                            LOCK_TOP["repos"] * 2):
+                with self.subTest(arch=arch, entries=entries):
+                    with tempfile.TemporaryDirectory() as root:
+                        self.root = Path(root)
+                        dirs = [self.arch_dir("aarch64"), self.arch_dir("x86_64")]
+                        bad = next(d for d in dirs if d.name == f"runtime-{arch}")
+                        (bad / "refs.lock.json").write_text(json.dumps({"repos": entries}))
+                        done, out = self.merge(dirs)
+                        self.assertNotEqual(done.returncode, 0, done.stderr)
+                        self.assertIn("source SHA", done.stderr)
+                        self.assertFalse(out.exists())
+
+    def test_equal_moved_locks_cannot_misattribute_release(self):
+        dirs = [self.arch_dir("aarch64"), self.arch_dir("x86_64")]
+        for directory in dirs:
+            moved = {"repos": [dict(LOCK_TOP["repos"][0], base="b" * 40)]}
+            (directory / "refs.lock.json").write_text(json.dumps(moved))
+        done, out = self.merge(dirs)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("source SHA", done.stderr)
+        self.assertFalse(out.exists())
+
+    def test_lock_sharing_only_the_sha7_prefix_is_rejected(self):
+        # The release tag carries only the first 7 characters, so a prefix match must not pass.
+        dirs = [self.arch_dir("aarch64"), self.arch_dir("x86_64")]
+        for directory in dirs:
+            lookalike = {"repos": [dict(LOCK_TOP["repos"][0], base="a" * 7 + "b" * 33)]}
+            (directory / "refs.lock.json").write_text(json.dumps(lookalike))
+        done, out = self.merge(dirs)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("source SHA", done.stderr)
+        self.assertFalse(out.exists())
 
     def test_extra_tarball_is_rejected(self):
         d = self.arch_dir("aarch64")
