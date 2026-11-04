@@ -61,44 +61,45 @@ static int hex_digit(unsigned char c)
 }
 
 /*
- * Compares the percent-decoded query parameter name starting at "name" (ending at
- * '=', '&', ';' or the end of the string) with a lowercase ASCII word.
+ * Several mail clients attach the file named by a mailto: "attach" parameter to the draft.
+ * A client may decode the URL before it splits the query, so the query is decoded once and
+ * then split. A literal "%25" would let a second decoding round produce delimiters or letters
+ * that this check never saw ("%2561ttach", "%2526attach"), so any mailto URL containing it
+ * is refused; so is a decoded NUL.
  */
-static int query_name_is(const char* name, const char* word)
-{
-	size_t w = 0;
-
-	while (*name != '\0' && *name != '=' && *name != '&' && *name != ';')
-	{
-		int c = (unsigned char) *name;
-
-		if (c == '%' && hex_digit((unsigned char) name[1]) >= 0 && hex_digit((unsigned char) name[2]) >= 0)
-		{
-			c = hex_digit((unsigned char) name[1]) * 16 + hex_digit((unsigned char) name[2]);
-			name += 2;
-		}
-		if (c >= 'A' && c <= 'Z')
-			c += 'a' - 'A';
-		if (word[w] == '\0' || c != (unsigned char) word[w])
-			return 0;
-		w++;
-		name++;
-	}
-	return word[w] == '\0';
-}
-
-/* Several mail clients attach the file named by a mailto: "attach" parameter to the draft. */
 static int mailto_attaches_file(const char* url)
 {
+	char decoded[LS_HOST_OPEN_MAX_URL_LENGTH + 1];
 	const char* query = strchr(url, '?');
+	size_t n = 0;
 
-	while (query != NULL)
+	if (query == NULL)
+		return 0;
+	if (strstr(query, "%25") != NULL)
+		return 1;
+
+	for (query++; *query != '\0'; query++)
 	{
-		const char* name = query + 1;
+		int c = (unsigned char) *query;
 
-		if (query_name_is(name, "attach") || query_name_is(name, "attachment"))
+		if (c == '%')
+		{
+			c = hex_digit((unsigned char) query[1]) * 16 + hex_digit((unsigned char) query[2]);
+			query += 2;
+			if (c == 0)
+				return 1;
+		}
+		decoded[n++] = (char) c;
+	}
+	decoded[n] = '\0';
+
+	for (const char* name = decoded; name != NULL; )
+	{
+		size_t len = strcspn(name, "=&;");
+
+		if ((len == 6 && strncasecmp(name, "attach", 6) == 0) || (len == 10 && strncasecmp(name, "attachment", 10) == 0))
 			return 1;
-		query = strpbrk(name, "&;");
+		name = name[len] == '\0' ? NULL : name + len + 1;
 	}
 	return 0;
 }
