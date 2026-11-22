@@ -60,3 +60,16 @@ FSEvents entry is fixed by VibeDarling/darling#1227 once it merges.
   (`sandbox_wakeup_daemon` returns -1), so the stubs report success together with
   an error message. VibeDarling/darling#1212 adds the NULL guards while
   deliberately keeping `return 0`.
+
+## Found while making QuartzCore bind against a foreign Metal (2026-11, VibeDarling/darling#1510)
+
+Existing defects in `src/external/cocotron`, not introduced by the fix that surfaced them.
+
+- `QuartzCore/CAMetalLayer.mm` (`recreateDrawables`): with `_drawableCondition` locked it sends
+  `-device` to the layer's device and casts the result to `MTLDeviceInternal*`. With a
+  `MTLDevice` that is not Darling's (a Metal served from the macOS dyld shared cache) that is a
+  message to a foreign object under the lock. `-setDevice:` reaches it for any app that renders.
+- `QuartzCore/CMakeLists.txt` (`add_framework(QuartzCore ...)`): the link line re-exports CoreVideo
+  and lists Metal after it. An arm64e build against the sysroot stubs can bind
+  `_MTLCreateSystemDefaultDevice` to CoreVideo (dyld stops with `Symbol not found:
+  _MTLCreateSystemDefaultDevice, Expected in: .../CoreVideo`); a scratch link needed Metal first.
