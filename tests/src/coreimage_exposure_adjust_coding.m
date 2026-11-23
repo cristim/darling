@@ -7,9 +7,12 @@
 // that have no default unchanged), https://developer.apple.com/documentation/coreimage/ciexposureadjust
 // (the parameters are inputImage and inputEV) and the filter reference
 // https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CoreImageFilterReference/index.html
-// (inputEV is an NSNumber with the default 0.50). The archive layout is not documented, so the tests
-// only use archives written by this implementation. The class is looked up by name because on macOS
-// CIExposureAdjust is a protocol in the public headers.
+// (inputEV is an NSNumber). The archive layout and the default of inputEV are not documented; the
+// expected values are what an archive written on macOS showed (black-box observation, tier 2): the
+// class name CIExposureAdjust, the key CI_inputEV with an NSNumber, no key for an unset parameter,
+// and an inputEV of 0 after -setDefaults (the archived filter reference lists 0.50, which current
+// macOS does not give). The class is looked up by name because on macOS CIExposureAdjust is a
+// protocol in the public headers.
 // Prints OK, or the failures with a non-zero exit status.
 #import <CoreImage/CoreImage.h>
 #import <Foundation/Foundation.h>
@@ -47,6 +50,50 @@ static id unarchive(NSData *data, BOOL secure) {
     return result;
 }
 
+// An object that archives only an inputEV, under the class name of the filter: a hand-built archive.
+@interface HandBuiltFilter : NSObject <NSCoding>
+@end
+
+@implementation HandBuiltFilter
+- (void) encodeWithCoder: (NSCoder *) coder {
+    [coder encodeObject: @1.25 forKey: @"CI_inputEV"];
+}
+- (instancetype) initWithCoder: (NSCoder *) coder {
+    return [super init];
+}
+@end
+
+// Records which of the candidate keys an archive holds, by decoding the filter as this class.
+static NSArray *probeCandidates;
+static NSMutableSet *probeSeen;
+
+@interface KeyProbe : NSObject <NSCoding>
+@end
+
+@implementation KeyProbe
+- (void) encodeWithCoder: (NSCoder *) coder {
+}
+- (instancetype) initWithCoder: (NSCoder *) coder {
+    for (NSString *key in probeCandidates) {
+        if ([coder containsValueForKey: key]) {
+            [probeSeen addObject: key];
+        }
+    }
+    return [super init];
+}
+@end
+
+static NSSet *keysHeldBy(NSData *data) {
+    probeCandidates = @[@"CI_inputEV", @"CI_inputImage", @"inputEV", @"inputImage"];
+    probeSeen = [NSMutableSet set];
+    NSKeyedUnarchiver *unarchiver = [[NSKeyedUnarchiver alloc] initForReadingWithData: data];
+    [unarchiver setClass: [KeyProbe class] forClassName: @"CIExposureAdjust"];
+    [unarchiver decodeObjectForKey: NSKeyedArchiveRootObjectKey];
+    [unarchiver finishDecoding];
+    [unarchiver release];
+    return probeSeen;
+}
+
 int main(void) {
     @autoreleasepool {
         Class filterClass = NSClassFromString(@"CIExposureAdjust");
@@ -68,6 +115,8 @@ int main(void) {
             id decoded = [decodedArray firstObject];
             CHECK([decoded isMemberOfClass: filterClass], "the decoded filter has the archived class");
             CHECK([[decoded valueForKey: kCIInputEVKey] isEqual: @1.25], "inputEV is decoded");
+            CHECK([[keysHeldBy(archive(filter, secure)) allObjects] isEqual: @[@"CI_inputEV"]],
+                  "inputEV is archived under CI_inputEV, and an unset inputImage is absent");
             CHECK([decoded valueForKey: kCIInputImageKey] == nil, "a filter without an image decodes with a nil inputImage");
 
             // a filter with no parameter set still decodes; the defaults apply after -setDefaults
@@ -75,10 +124,24 @@ int main(void) {
             decoded = unarchive(archive(blank, secure), secure);
             CHECK([decoded isMemberOfClass: filterClass], "a filter without parameters decodes");
             CHECK([decoded valueForKey: kCIInputEVKey] == nil, "decoding applies no defaults");
+            CHECK([keysHeldBy(archive(blank, secure)) count] == 0, "an unset filter archives no parameter keys");
             [decoded setDefaults];
-            CHECK([[decoded valueForKey: kCIInputEVKey] isEqual: @0.5], "-setDefaults gives inputEV its default of 0.5");
+            CHECK([[decoded valueForKey: kCIInputEVKey] doubleValue] == 0 && [decoded valueForKey: kCIInputEVKey] != nil,
+                  "-setDefaults gives inputEV the value 0");
             CHECK([decoded valueForKey: kCIInputImageKey] == nil, "-setDefaults has no default for inputImage");
         }
+
+        // an archive that holds only CI_inputEV decodes into the filter class with that value
+        NSKeyedArchiver *builder = [[NSKeyedArchiver alloc] initRequiringSecureCoding: NO];
+        [builder setClassName: @"CIExposureAdjust" forClass: [HandBuiltFilter class]];
+        [builder encodeObject: [[[HandBuiltFilter alloc] init] autorelease] forKey: NSKeyedArchiveRootObjectKey];
+        [builder finishEncoding];
+        NSData *handBuilt = [[[builder encodedData] copy] autorelease];
+        [builder release];
+        id fromHandBuilt = unarchive(handBuilt, NO);
+        CHECK([fromHandBuilt isMemberOfClass: filterClass], "the hand-built archive decodes to the filter class");
+        CHECK([[fromHandBuilt valueForKey: kCIInputEVKey] isEqual: @1.25], "CI_inputEV is read");
+        CHECK([fromHandBuilt valueForKey: kCIInputImageKey] == nil, "an absent CI_inputImage leaves inputImage unset");
 
         // -setDefaults changes inputEV and leaves a parameter without a default alone
         id image = [CIImage emptyImage];
@@ -86,7 +149,7 @@ int main(void) {
         [other setValue: image forKey: kCIInputImageKey];
         [other setValue: @-3 forKey: kCIInputEVKey];
         [other setDefaults];
-        CHECK([[other valueForKey: kCIInputEVKey] isEqual: @0.5], "-setDefaults replaces a set inputEV");
+        CHECK([[other valueForKey: kCIInputEVKey] doubleValue] == 0, "-setDefaults replaces a set inputEV");
         CHECK([other valueForKey: kCIInputImageKey] == image, "-setDefaults leaves inputImage unchanged");
     }
     printf(failures ? "FAILED\n" : "OK\n");

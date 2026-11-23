@@ -23,11 +23,12 @@
 
 @implementation CIExposureAdjust
 
-// The filter reference gives inputEV a default of 0.50 and no default for inputImage, which
-// -[CIFilter setDefaults] documents as left unchanged.
-// https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CoreImageFilterReference/index.html
+// Observed on macOS: after -setDefaults the inputEV of an exposure filter is 0 (black-box observation
+// with a small test program, tier 2). The archived filter reference still lists 0.50, so it is not
+// used. inputImage has no default and is left unchanged, as -[CIFilter setDefaults] documents.
+// https://developer.apple.com/documentation/coreimage/cifilter-swift.class/setdefaults()
 - (void) setDefaults {
-    [self setValue: [NSNumber numberWithDouble: 0.5] forKey: kCIInputEVKey];
+    [self setValue: [NSNumber numberWithDouble: 0] forKey: kCIInputEVKey];
 }
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector {

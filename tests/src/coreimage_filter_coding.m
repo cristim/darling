@@ -4,8 +4,10 @@
 // CIFilter conforms to NSSecureCoding and manages its input parameters when archiving and deallocating
 // (https://developer.apple.com/documentation/coreimage/cifilter-swift.class, "Subclassing notes"): the
 // parameters are the instance variables whose names start with "input". This test uses a subclass written
-// the way that page describes. The archive layout is not documented, so the tests only check what a round
-// trip through our own archive gives back, plus that decoding an archive without parameters does not raise.
+// the way that page describes. The archive layout is not documented. What an archive written on macOS
+// showed for a CIExposureAdjust (black-box observation, tier 2; see coreimage_exposure_adjust_coding.m) is
+// applied to every filter: a parameter is archived under "CI_" plus its name, and an unset one is absent.
+// Other filters and value classes were not observed.
 // Prints OK, or the failures with a non-zero exit status.
 #import <CoreImage/CoreImage.h>
 #import <Foundation/Foundation.h>
@@ -23,6 +25,26 @@ static int probeDeallocations;
 - (void) dealloc {
     probeDeallocations++;
     [super dealloc];
+}
+@end
+
+// Records which of the candidate keys an archive holds, by decoding the filter as this class.
+static NSArray *probeCandidates;
+static NSMutableSet *probeSeen;
+
+@interface KeyProbe : NSObject <NSCoding>
+@end
+
+@implementation KeyProbe
+- (void) encodeWithCoder: (NSCoder *) coder {
+}
+- (instancetype) initWithCoder: (NSCoder *) coder {
+    for (NSString *key in probeCandidates) {
+        if ([coder containsValueForKey: key]) {
+            [probeSeen addObject: key];
+        }
+    }
+    return [super init];
 }
 @end
 
@@ -67,6 +89,17 @@ static id unarchive(NSData *data, BOOL secure) {
     return result;
 }
 
+static NSSet *keysHeldBy(NSData *data) {
+    probeCandidates = @[@"CI_inputAmount", @"CI_inputLabel", @"inputAmount", @"inputLabel"];
+    probeSeen = [NSMutableSet set];
+    NSKeyedUnarchiver *unarchiver = [[NSKeyedUnarchiver alloc] initForReadingWithData: data];
+    [unarchiver setClass: [KeyProbe class] forClassName: @"CodingTestFilter"];
+    [unarchiver decodeObjectForKey: NSKeyedArchiveRootObjectKey];
+    [unarchiver finishDecoding];
+    [unarchiver release];
+    return probeSeen;
+}
+
 int main(void) {
     @autoreleasepool {
         // the documented class conformance
@@ -87,6 +120,8 @@ int main(void) {
             CHECK([decoded isMemberOfClass: [CodingTestFilter class]], "the decoded object has the archived class");
             CHECK([[decoded valueForKey: @"inputAmount"] isEqual: @2.5], "the number parameter is decoded");
             CHECK([[decoded valueForKey: @"inputLabel"] isEqual: @"caption"], "the string parameter is decoded");
+            NSSet *both = [NSSet setWithObjects: @"CI_inputAmount", @"CI_inputLabel", nil];
+            CHECK([keysHeldBy(archive(filter, secure)) isEqualToSet: both], "parameters are archived under CI_ plus their name");
 
             // the filter reference lists NSAffineTransform as a parameter class (inputTransform)
             NSAffineTransform *transform = [NSAffineTransform transform];
@@ -102,6 +137,7 @@ int main(void) {
             CHECK([decoded isMemberOfClass: [CodingTestFilter class]], "a filter without parameters decodes");
             CHECK([decoded valueForKey: @"inputAmount"] == nil && [decoded valueForKey: @"inputLabel"] == nil,
                   "absent parameters stay without a value");
+            CHECK([keysHeldBy(archive(empty, secure)) count] == 0, "unset parameters are absent from the archive");
 
             // a partial filter keeps what it had
             CodingTestFilter *partial = [[[CodingTestFilter alloc] init] autorelease];
