@@ -251,7 +251,8 @@ CGL_EXPORT CGLError CGLContextMakeCurrentAndAttachToWindow(CGLContextObj context
     EGLSurface previous_surface = context->egl_surface;
     context->egl_surface = (EGLSurface) window;
     CGLError error = CGLSetCurrentContext(context);
-    if (error != kCGLNoError)
+    // kCGLBadValue means eglMakeCurrent already bound window; roll back only if make-current failed.
+    if (error == kCGLBadContext)
         context->egl_surface = previous_surface;
     return error;
 }
@@ -419,26 +420,44 @@ CGLContextObj CGLRetainContext(CGLContextObj context) {
         return NULL;
     }
 
-    context->retain_count++;
+    __atomic_add_fetch(&context->retain_count, 1, __ATOMIC_RELAXED);
     return context;
 }
 
-void CGLReleaseContext(CGLContextObj context) {
+static CGLError release_context(CGLContextObj context) {
     if (context == NULL) {
-        return;
+        return kCGLBadContext;
     }
 
-    if (CGLGetCurrentContext() == context) {
-        // Do not free a context while EGL/TLS still identify it as current.
-        // A failed unbind leaves ownership with the caller for a later retry.
-        if (CGLSetCurrentContext(NULL) != kCGLNoError)
-            return;
-    }
+    GLuint count = __atomic_load_n(&context->retain_count, __ATOMIC_ACQUIRE);
+    for (;;) {
+        if (count == 0) {
+            return kCGLBadContext;
+        }
 
-    context->retain_count--;
+        while (count > 1) {
+            if (__atomic_compare_exchange_n(&context->retain_count, &count, count - 1, 0,
+                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                return kCGLNoError;
+            }
+            if (count == 0) {
+                return kCGLBadContext;
+            }
+        }
 
-    if (context->retain_count != 0) {
-        return;
+        if (CGLGetCurrentContext() == context) {
+            // Do not free a context while EGL/TLS still identify it as current.
+            // A failed unbind leaves ownership with the caller for a later retry.
+            CGLError error = CGLSetCurrentContext(NULL);
+            if (error != kCGLNoError) {
+                return error;
+            }
+        }
+
+        if (__atomic_compare_exchange_n(&context->retain_count, &count, 0, 0,
+                __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            break;
+        }
     }
 
     pthread_mutex_destroy(&(context->lock));
@@ -446,6 +465,11 @@ void CGLReleaseContext(CGLContextObj context) {
     eglDestroyContext(display, context->egl_context);
 
     free(context);
+    return kCGLNoError;
+}
+
+void CGLReleaseContext(CGLContextObj context) {
+    (void)release_context(context);
 }
 
 GLuint CGLGetContextRetainCount(CGLContextObj context) {
@@ -453,13 +477,11 @@ GLuint CGLGetContextRetainCount(CGLContextObj context) {
         return 0;
     }
 
-    return context->retain_count;
+    return __atomic_load_n(&context->retain_count, __ATOMIC_ACQUIRE);
 }
 
 CGLError CGLDestroyContext(CGLContextObj context) {
-    CGLReleaseContext(context);
-
-    return kCGLNoError;
+    return release_context(context);
 }
 
 CGLError CGLLockContext(CGLContextObj context) {
